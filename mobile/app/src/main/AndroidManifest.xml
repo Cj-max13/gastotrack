@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.gastotrack">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    <application
+        android:allowBackup="true"
+        android:label="GastoTrack"
+        android:theme="@style/Theme.AppCompat">
+
+        <!--
+            NotificationListenerService — reads GCash/bank notifications
+            and sends them to the GastoTrack backend as transactions.
+
+            After installing, the user must grant Notification Access:
+            Settings → Apps → Special app access → Notification access → GastoTrack
+        -->
+        <service
+            android:name=".NotificationService"
+            android:label="GastoTrack SMS Listener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+    </application>
+
+</manifest>

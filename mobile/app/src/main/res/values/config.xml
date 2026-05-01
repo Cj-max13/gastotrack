@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Change server_host to your PC's local IP address.
+        Run `ipconfig` on your PC to find it.
+        Both your phone and PC must be on the same WiFi.
+    -->
+    <string name="server_host">192.168.0.11</string>
+    <string name="server_port">3000</string>
+</resources>
