@@ -39,6 +39,17 @@ async function migrate() {
   `);
   console.log("✅ user_id column ready");
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS category_resets (
+      id         SERIAL PRIMARY KEY,
+      user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      category   VARCHAR(50) NOT NULL,
+      offset_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+      reset_at   TIMESTAMP DEFAULT NOW()
+    );
+  `);
+  console.log("✅ category_resets table ready");
+
   console.log("Migrations complete.");
   process.exit(0);
 }

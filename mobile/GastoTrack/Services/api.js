@@ -40,12 +40,15 @@ export const postTransaction = async (text) => {
   return res;
 };
 
-export const resetCategorySpending = (category) =>
-  api.delete(`/transactions/reset/${encodeURIComponent(category)}`);
+export const resetCategorySpending = (category, spentAmount) =>
+  api.post(`/transactions/reset/${encodeURIComponent(category)}`, { spentAmount });
+
+export const getCategoryOffsets = () =>
+  api.get('/transactions/offsets');
 
 // ── AI Service ──
-export const getInsights = (transactions, budgets = null) =>
-  axios.post(`${CONFIG.AI_URL}/ai/insights`, { transactions, budgets });
+export const getInsights = (transactions, budgets = null, category_offsets = null) =>
+  axios.post(`${CONFIG.AI_URL}/ai/insights`, { transactions, budgets, category_offsets });
 
 export const previewCategorize = (merchant, rawText = '') =>
   axios.post(`${CONFIG.AI_URL}/ai/categorize`, { merchant, raw_text: rawText });

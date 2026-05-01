@@ -24,3 +24,34 @@ exports.deleteByCategory = async (category, userId) => {
   );
   return result.rowCount;
 };
+
+/**
+ * Get the total reset offset for each category.
+ * Returns { food: 1500, transport: 200, ... }
+ */
+exports.getCategoryOffsets = async (userId) => {
+  const result = await pool.query(
+    `SELECT category, COALESCE(SUM(offset_amount), 0) AS total_offset
+     FROM category_resets
+     WHERE user_id = $1
+     GROUP BY category`,
+    [userId]
+  );
+  const offsets = {};
+  for (const row of result.rows) {
+    offsets[row.category] = parseFloat(row.total_offset);
+  }
+  return offsets;
+};
+
+/**
+ * Record a reset: saves the current spent amount as an offset so
+ * future calculations subtract it. Transactions are NOT deleted.
+ */
+exports.recordReset = async (category, offsetAmount, userId) => {
+  await pool.query(
+    `INSERT INTO category_resets (user_id, category, offset_amount)
+     VALUES ($1, $2, $3)`,
+    [userId, category, offsetAmount]
+  );
+};

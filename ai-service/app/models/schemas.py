@@ -12,4 +12,5 @@ class Transaction(BaseModel):
 
 class InsightsRequest(BaseModel):
     transactions: list[Transaction]
-    budgets: Optional[dict[str, float]] = None  # user-defined limits, falls back to defaults
+    budgets: Optional[dict[str, float]] = None
+    category_offsets: Optional[dict[str, float]] = None  # reset offsets per category

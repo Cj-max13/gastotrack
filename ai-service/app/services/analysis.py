@@ -78,9 +78,11 @@ Give 3–5 short, specific, actionable suggestions to help them manage their bud
 def analyze(
     transactions: list[dict[str, Any]],
     custom_budgets: dict[str, float] | None = None,
+    category_offsets: dict[str, float] | None = None,
 ) -> dict[str, Any]:
 
-    limits = {**BUDGET_LIMITS, **(custom_budgets or {})}
+    limits  = {**BUDGET_LIMITS, **(custom_budgets or {})}
+    offsets = category_offsets or {}  # amounts to subtract per category
 
     if not transactions:
         return {
@@ -113,13 +115,21 @@ def analyze(
     average_transaction = total_spent / transaction_count if transaction_count else 0.0
     top_category = max(cat_totals, key=cat_totals.get) if cat_totals else None
 
-    # Budget status
+    # Apply reset offsets — subtract from each category's total
+    # (floor at 0 so it never goes negative)
+    adjusted_totals = {
+        cat: max(0.0, amt - offsets.get(cat, 0.0))
+        for cat, amt in cat_totals.items()
+    }
+    adjusted_total = sum(adjusted_totals.values())
+
+    # Budget status — uses adjusted totals (after reset offsets)
     budget_status: dict[str, Any] = {}
     overspending_alerts: list[dict[str, Any]] = []
 
-    for cat, spent in cat_totals.items():
+    for cat, spent in adjusted_totals.items():
         limit = limits.get(cat, limits.get("other", 2000))
-        pct = round((spent / limit) * 100, 1)
+        pct = round((spent / limit) * 100, 1) if limit > 0 else 0
         status = "ok"
 
         if pct >= 100:
@@ -144,14 +154,14 @@ def analyze(
         }
 
     # Gemini-generated suggestions
-    suggestions = _gemini_suggestions(cat_totals, budget_status, total_spent, overspending_alerts)
+    suggestions = _gemini_suggestions(adjusted_totals, budget_status, adjusted_total, overspending_alerts)
 
     return {
-        "total_spent": round(total_spent, 2),
+        "total_spent": round(adjusted_total, 2),
         "transaction_count": transaction_count,
         "average_transaction": round(average_transaction, 2),
         "top_category": top_category,
-        "category_breakdown": {cat: round(amt, 2) for cat, amt in cat_totals.items()},
+        "category_breakdown": {cat: round(amt, 2) for cat, amt in adjusted_totals.items()},
         "budget_status": budget_status,
         "suggestions": suggestions,
         "overspending_alerts": overspending_alerts,

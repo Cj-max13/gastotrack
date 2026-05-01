@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { sendChatMessage, getTransactions, getInsights } from '../Services/api';
+import { sendChatMessage, getTransactions, getInsights, getCategoryOffsets } from '../Services/api';
 import GastoAvatar from '../components/GastoAvatar';
 const SUGGESTED_QUESTIONS = [
   'How much have I spent this month?',
@@ -60,7 +60,9 @@ export default function ChatScreen() {
 
       const stored = await AsyncStorage.getItem('budgets');
       const budgets = stored ? JSON.parse(stored) : null;
-      const insightsRes = await getInsights(txList, budgets);
+      let category_offsets = null;
+      try { const r = await getCategoryOffsets(); category_offsets = r.data; } catch {}
+      const insightsRes = await getInsights(txList, budgets, category_offsets);
       const insights = insightsRes.data;
 
       // Build a context-rich prompt for Gasto to greet with

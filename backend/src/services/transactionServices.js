@@ -30,6 +30,16 @@ exports.getTransactions = async (userId) => {
   return await transactionModel.getAll(userId);
 };
 
-exports.resetCategory = async (category, userId) => {
-  return await transactionModel.deleteByCategory(category, userId);
+/**
+ * Reset a category's displayed spending by recording the current
+ * total as an offset. Transactions are NOT deleted — only the
+ * displayed amount resets to ₱0.
+ */
+exports.resetCategory = async (category, spentAmount, userId) => {
+  await transactionModel.recordReset(category, spentAmount, userId);
+  return { category, offset: spentAmount };
+};
+
+exports.getCategoryOffsets = async (userId) => {
+  return await transactionModel.getCategoryOffsets(userId);
 };

@@ -18,11 +18,30 @@ exports.getTransactions = async (req, res) => {
   }
 };
 
+/**
+ * POST /transactions/reset/:category
+ * Body: { spentAmount: number }
+ * Records the current spent amount as an offset so the displayed
+ * spending resets to ₱0. Transactions are NOT deleted.
+ */
 exports.resetCategory = async (req, res) => {
   try {
     const { category } = req.params;
-    const deleted = await transactionService.resetCategory(category, req.userId);
-    res.json({ deleted, category, message: `Reset ${deleted} transaction(s) in ${category}` });
+    const { spentAmount } = req.body;
+    if (!spentAmount || isNaN(spentAmount)) {
+      return res.status(400).json({ error: "spentAmount is required" });
+    }
+    const result = await transactionService.resetCategory(category, parseFloat(spentAmount), req.userId);
+    res.json({ ...result, message: `${category} spending reset to ₱0` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getCategoryOffsets = async (req, res) => {
+  try {
+    const offsets = await transactionService.getCategoryOffsets(req.userId);
+    res.json(offsets);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

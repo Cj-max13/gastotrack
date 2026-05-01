@@ -18,4 +18,4 @@ def get_insights(body: InsightsRequest):
     Optionally pass `budgets` to override the default category limits.
     """
     transactions = [t.model_dump() for t in body.transactions]
-    return analyze(transactions, custom_budgets=body.budgets)
+    return analyze(transactions, custom_budgets=body.budgets, category_offsets=body.category_offsets)

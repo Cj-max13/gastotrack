@@ -4,7 +4,7 @@ import {
   RefreshControl, Dimensions, ActivityIndicator, Animated,
 } from 'react-native';
 import { BarChart } from 'react-native-chart-kit';
-import { getTransactions, getInsights, resetCategorySpending } from '../Services/api';
+import { getTransactions, getInsights, resetCategorySpending, getCategoryOffsets } from '../Services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
@@ -66,12 +66,17 @@ export default function DashboardScreen({ navigation }) {
       // Fetch AI insights if there are transactions
       if (txList.length > 0) {
         try {
-          const stored = await AsyncStorage.getItem('budgets');
+          const stored  = await AsyncStorage.getItem('budgets');
           const budgets = stored ? JSON.parse(stored) : null;
-          const aiRes = await getInsights(txList, budgets);
+          // Fetch reset offsets so insights reflect reset spending
+          let category_offsets = null;
+          try {
+            const offsetRes = await getCategoryOffsets();
+            category_offsets = offsetRes.data;
+          } catch { /* ignore if offline */ }
+          const aiRes = await getInsights(txList, budgets, category_offsets);
           setInsights(aiRes.data);
         } catch {
-          // AI service is optional — don't block the dashboard
           setInsights(null);
         }
       }
@@ -102,7 +107,7 @@ export default function DashboardScreen({ navigation }) {
     showAlert({
       icon: '🔄',
       title: `Reset ${category}?`,
-      message: `This will delete all ₱${spent.toLocaleString()} worth of ${category} transactions and reset your spending to ₱0.\n\nThis cannot be undone.`,
+      message: `Your ${category} spending of ₱${spent.toLocaleString()} will be reset to ₱0.\n\nYour transactions are kept — only the displayed amount resets.`,
       buttons: [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -111,8 +116,7 @@ export default function DashboardScreen({ navigation }) {
           onPress: async () => {
             setResetting(category);
             try {
-              await resetCategorySpending(category);
-              // Reload dashboard with fresh data
+              await resetCategorySpending(category, spent);
               setLoading(true);
               load();
             } catch {
