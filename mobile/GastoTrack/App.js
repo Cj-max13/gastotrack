@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import {
   Text, View, ActivityIndicator, TouchableOpacity,
-  Animated, StyleSheet, Dimensions, Platform,
+  Animated, StyleSheet, Dimensions, Platform, NativeModules,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -342,13 +342,11 @@ function App() {
   const handleLogin  = (userData) => setUser(userData);
   const handleLogout = async () => {
     await AsyncStorage.multiRemove(['token', 'user']);
-    // Clear from SharedPrefs so NotificationService stops sending
     try {
-      const { NativeModules, Platform } = require('react-native');
       if (Platform.OS === 'android' && NativeModules.SharedPrefs) {
         NativeModules.SharedPrefs.remove('auth_token');
       }
-    } catch { /* ignore */ }
+    } catch { /* ignore in Expo Go */ }
     setUser(null);
   };
 

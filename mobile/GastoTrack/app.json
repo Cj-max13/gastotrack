@@ -29,8 +29,7 @@
       ]
     },
     "plugins": [
-      "./plugins/withNotificationService",
-      "./plugins/withSharedPrefsModule"
+      "./plugins/withNotificationService"
     ],
     "extra": {
       "eas": {

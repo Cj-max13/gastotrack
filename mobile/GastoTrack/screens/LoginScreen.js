@@ -2,12 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ActivityIndicator, KeyboardAvoidingView,
-  Platform, ScrollView, Animated,
+  Platform, ScrollView, Animated, NativeModules,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login } from '../Services/api';
 import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
-import { NativeModules, Platform } from 'react-native';
 
 // Write token to Android SharedPreferences so NotificationService.kt can read it
 async function saveTokenNative(token) {
