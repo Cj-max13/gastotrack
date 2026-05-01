@@ -342,6 +342,13 @@ function App() {
   const handleLogin  = (userData) => setUser(userData);
   const handleLogout = async () => {
     await AsyncStorage.multiRemove(['token', 'user']);
+    // Clear from SharedPrefs so NotificationService stops sending
+    try {
+      const { NativeModules, Platform } = require('react-native');
+      if (Platform.OS === 'android' && NativeModules.SharedPrefs) {
+        NativeModules.SharedPrefs.remove('auth_token');
+      }
+    } catch { /* ignore */ }
     setUser(null);
   };
 

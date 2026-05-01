@@ -7,6 +7,16 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login } from '../Services/api';
 import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
+import { NativeModules, Platform } from 'react-native';
+
+// Write token to Android SharedPreferences so NotificationService.kt can read it
+async function saveTokenNative(token) {
+  try {
+    if (Platform.OS === 'android' && NativeModules.SharedPrefs) {
+      NativeModules.SharedPrefs.setString('auth_token', token);
+    }
+  } catch { /* native module not available in Expo Go */ }
+}
 
 export default function LoginScreen({ navigation, onLogin }) {
   const [email, setEmail]       = useState('');
@@ -48,6 +58,7 @@ export default function LoginScreen({ navigation, onLogin }) {
       const res = await login(email.trim().toLowerCase(), password);
       await AsyncStorage.setItem('token', res.data.token);
       await AsyncStorage.setItem('user', JSON.stringify(res.data.user));
+      await saveTokenNative(res.data.token);  // sync to SharedPrefs for NotificationService
       onLogin(res.data.user);
     } catch (e) {
       const msg = e.response?.data?.error || 'Could not connect to server.';

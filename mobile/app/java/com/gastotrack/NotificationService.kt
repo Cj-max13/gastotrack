@@ -13,32 +13,31 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * NotificationService — listens for GCash / bank SMS notifications
+ * NotificationService — listens for GCash / bank app notifications
  * and automatically sends them to the GastoTrack backend as transactions.
  *
- * Setup required in AndroidManifest.xml:
- *   <service
- *       android:name=".NotificationService"
- *       android:label="GastoTrack SMS Listener"
- *       android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
- *       <intent-filter>
- *           <action android:name="android.service.notification.NotificationListenerService" />
- *       </intent-filter>
- *   </service>
+ * SETUP (done automatically by the Expo config plugin):
+ *   AndroidManifest.xml gets the service declaration + permission.
  *
- * User must also grant Notification Access in:
- *   Settings → Apps → Special app access → Notification access → GastoTrack
+ * USER SETUP REQUIRED (one-time):
+ *   Settings → Apps → Special app access → Notification access → GastoTrack → Enable
+ *
+ * TOKEN SYNC:
+ *   After login, the JS side stores the JWT in SharedPreferences under
+ *   key "auth_token" in the "gastotrack_prefs" file.
+ *   This service reads it automatically on each notification.
  */
 class NotificationService : NotificationListenerService() {
 
     companion object {
-        private const val TAG = "GastoTrack"
+        private const val TAG        = "GastoTrack"
         private const val PREFS_NAME = "gastotrack_prefs"
-        private const val PREF_HOST = "server_host"
-        private const val PREF_PORT = "server_port"
         private const val PREF_TOKEN = "auth_token"
-        private const val DEFAULT_HOST = "gastotrack-backend.railway.app"
-        private const val DEFAULT_PORT = "443"
+
+        // ── Server config — updated by the Expo config plugin ──────────────
+        // For local dev: use your PC's IP
+        // For production: use your Railway URL
+        private const val BACKEND_URL = "http://192.168.0.11:3000/transactions/raw"
 
         // GCash and Philippine bank app package names
         private val FINANCIAL_PACKAGES = setOf(
@@ -54,7 +53,7 @@ class NotificationService : NotificationListenerService() {
             "com.coins.ph",                  // Coins.ph
         )
 
-        // SMS app packages — filtered by keywords below
+        // SMS app packages — filtered by keywords
         private val SMS_PACKAGES = setOf(
             "com.android.mms",
             "com.google.android.apps.messaging",
@@ -83,8 +82,8 @@ class NotificationService : NotificationListenerService() {
         val packageName = sbn.packageName ?: return
         val extras: Bundle = sbn.notification.extras ?: return
 
-        val text    = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
-        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: text
+        val text     = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString() ?: ""
+        val bigText  = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString() ?: text
         val fullText = if (bigText.isNotBlank()) bigText else text
 
         if (fullText.isBlank()) return
@@ -105,35 +104,37 @@ class NotificationService : NotificationListenerService() {
         return TRANSACTION_KEYWORDS.any { lower.contains(it) }
     }
 
-    private fun getPrefs(): SharedPreferences =
-        applicationContext.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-
-    private fun buildUrl(): String {
-        val prefs = getPrefs()
-        val host  = prefs.getString(PREF_HOST, DEFAULT_HOST) ?: DEFAULT_HOST
-        val port  = prefs.getString(PREF_PORT, DEFAULT_PORT) ?: DEFAULT_PORT
-        val scheme = if (port == "443" || host.contains("railway") || host.contains("render")) "https" else "http"
-        return "$scheme://$host${if (port == "443" || port == "80") "" else ":$port"}/transactions/raw"
+    /**
+     * Read the JWT token saved by the JS side after login.
+     * The React Native AsyncStorage on Android stores data in SharedPreferences
+     * under the app's package name. We read from our own prefs file.
+     */
+    private fun getToken(): String? {
+        return try {
+            // Try our own prefs first (set by a native module or direct write)
+            val prefs: SharedPreferences = applicationContext
+                .getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            prefs.getString(PREF_TOKEN, null)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read auth token", e)
+            null
+        }
     }
-
-    private fun getToken(): String? =
-        getPrefs().getString(PREF_TOKEN, null)
 
     private fun sendToBackend(text: String) {
         Thread {
             var connection: HttpURLConnection? = null
             try {
-                val url = URL(buildUrl())
+                val url = URL(BACKEND_URL)
                 connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.doOutput = true
-                connection.doInput  = true
+                connection.requestMethod  = "POST"
+                connection.doOutput       = true
+                connection.doInput        = true
                 connection.connectTimeout = 10_000
                 connection.readTimeout    = 10_000
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.setRequestProperty("Accept", "application/json")
 
-                // Attach JWT token if available (set after user logs in)
                 val token = getToken()
                 if (!token.isNullOrBlank()) {
                     connection.setRequestProperty("Authorization", "Bearer $token")
@@ -146,12 +147,12 @@ class NotificationService : NotificationListenerService() {
                 if (code == HttpURLConnection.HTTP_OK || code == HttpURLConnection.HTTP_CREATED) {
                     val response = BufferedReader(InputStreamReader(connection.inputStream))
                         .use { it.readText() }
-                    Log.d(TAG, "Transaction saved from SMS: $response")
+                    Log.d(TAG, "Transaction saved from notification: $response")
                 } else {
                     Log.w(TAG, "Backend returned HTTP $code for: $text")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to send SMS transaction to backend", e)
+                Log.e(TAG, "Failed to send notification to backend", e)
             } finally {
                 connection?.disconnect()
             }
