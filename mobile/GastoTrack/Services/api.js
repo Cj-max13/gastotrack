@@ -1,6 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CONFIG from '../config';
+import { cacheTransactions, getCachedTransactions, addToCache } from '../services/OfflineManager';
 
 // ── Axios instance with auto-injected JWT ──
 const api = axios.create({ baseURL: CONFIG.API_URL });
@@ -18,9 +19,26 @@ export const register = (name, email, password) =>
 export const login = (email, password) =>
   axios.post(`${CONFIG.API_URL}/auth/login`, { email, password });
 
-// ── Transactions (require auth) ──
-export const getTransactions = () => api.get('/transactions');
-export const postTransaction = (text) => api.post('/transactions/raw', { text });
+// ── Transactions (online + offline cache) ──
+export const getTransactions = async () => {
+  try {
+    const res = await api.get('/transactions');
+    // Cache the fresh data for offline use
+    await cacheTransactions(res.data);
+    return res;
+  } catch {
+    // Offline — return cached data
+    const cached = await getCachedTransactions();
+    return { data: cached, fromCache: true };
+  }
+};
+
+export const postTransaction = async (text) => {
+  const res = await api.post('/transactions/raw', { text });
+  // Add to local cache immediately
+  await addToCache(res.data);
+  return res;
+};
 
 // ── AI Service ──
 export const getInsights = (transactions, budgets = null) =>

@@ -1,10 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet,
   RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { getTransactions } from '../Services/api';
 import { useFocusEffect } from '@react-navigation/native';
+import { getQueue, getLastSyncTime } from '../services/OfflineManager';
 
 const CAT_COLORS = {
   food: '#FF6B6B',
@@ -23,11 +24,19 @@ export default function TransactionsScreen() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fromCache, setFromCache] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [lastSync, setLastSync] = useState(null);
 
   const load = async () => {
     try {
       const res = await getTransactions();
       setTransactions(res.data);
+      setFromCache(!!res.fromCache);
+      const queue = await getQueue();
+      setPendingCount(queue.length);
+      const sync = await getLastSyncTime();
+      setLastSync(sync);
     } catch (e) {}
     finally {
       setLoading(false);
@@ -76,7 +85,24 @@ export default function TransactionsScreen() {
           </View>
         }
         ListHeaderComponent={
-          <Text style={styles.header}>All Transactions ({transactions.length})</Text>
+          <View>
+            <Text style={styles.header}>All Transactions ({transactions.length})</Text>
+            {fromCache && (
+              <View style={styles.cacheNotice}>
+                <Text style={styles.cacheNoticeText}>
+                  📵 Showing cached data
+                  {lastSync ? ` · Last synced ${new Date(lastSync).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                </Text>
+              </View>
+            )}
+            {pendingCount > 0 && (
+              <View style={styles.pendingNotice}>
+                <Text style={styles.pendingNoticeText}>
+                  ⏳ {pendingCount} transaction{pendingCount > 1 ? 's' : ''} pending sync
+                </Text>
+              </View>
+            )}
+          </View>
         }
         renderItem={({ item }) => (
           <View style={styles.txItem}>
@@ -94,6 +120,11 @@ export default function TransactionsScreen() {
                   {item.category}
                 </Text>
               </View>
+              {item.offline && (
+                <View style={styles.pendingBadge}>
+                  <Text style={styles.pendingBadgeText}>⏳ pending</Text>
+                </View>
+              )}
             </View>
           </View>
         )}
@@ -125,4 +156,23 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingVertical: 60 },
   emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyText: { color: '#5A5A54', fontSize: 14 },
+
+  cacheNotice: {
+    backgroundColor: '#1A0A00', borderRadius: 10, padding: 10,
+    marginBottom: 10, borderWidth: 1, borderColor: '#FF6B6B20',
+  },
+  cacheNoticeText: { fontSize: 12, color: '#FFB347' },
+
+  pendingNotice: {
+    backgroundColor: '#0A1A2A', borderRadius: 10, padding: 10,
+    marginBottom: 10, borderWidth: 1, borderColor: '#4ECDC420',
+  },
+  pendingNoticeText: { fontSize: 12, color: '#4ECDC4' },
+
+  pendingBadge: {
+    backgroundColor: '#1A0A00', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderWidth: 1, borderColor: '#FFB34740',
+  },
+  pendingBadgeText: { fontSize: 9, color: '#FFB347', fontWeight: '600' },
 });

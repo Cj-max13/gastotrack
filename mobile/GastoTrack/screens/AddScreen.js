@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { postTransaction, previewCategorize } from '../Services/api';
 import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
+import { isOnline, addToQueue, addToCache } from '../services/OfflineManager';
 
 const EXAMPLES = [
   'Spent ₱150 at Jollibee',
@@ -144,11 +145,35 @@ export default function AddScreen({ navigation }) {
     setLoading(true);
     pulseBtn();
     try {
-      const res = await postTransaction(text.trim());
-      setText('');
-      setPreview(null);
-      setSuccessData(res.data);
-      setSuccessVisible(true);
+      const online = await isOnline();
+
+      if (!online) {
+        // ── OFFLINE: save to queue ──
+        const queued = await addToQueue(text.trim());
+        // Build a local transaction for immediate display
+        const { amount, merchant } = quickParse(text);
+        const localTx = {
+          id: queued.id,
+          amount: amount || 0,
+          merchant: merchant || 'Unknown',
+          category: preview?.category || 'other',
+          raw_text: text.trim(),
+          created_at: new Date().toISOString(),
+          offline: true, // flag so UI can show pending badge
+        };
+        await addToCache(localTx);
+        setText('');
+        setPreview(null);
+        setSuccessData({ ...localTx, offline: true });
+        setSuccessVisible(true);
+      } else {
+        // ── ONLINE: save to server ──
+        const res = await postTransaction(text.trim());
+        setText('');
+        setPreview(null);
+        setSuccessData(res.data);
+        setSuccessVisible(true);
+      }
     } catch (e) {
       showAlert({ icon: '❌', title: 'Connection Error', message: 'Could not connect to server.\nMake sure your backend is running.' });
     } finally {
@@ -165,7 +190,14 @@ export default function AddScreen({ navigation }) {
         <View style={styles.modalOverlay}>
           <Animated.View style={[styles.modalCard, { transform: [{ scale: btnScale }] }]}>
             <Text style={styles.modalIcon}>✅</Text>
-            <Text style={styles.modalTitle}>Transaction Saved!</Text>
+            <Text style={styles.modalTitle}>
+              {successData?.offline ? 'Saved Offline!' : 'Transaction Saved!'}
+            </Text>
+            {successData?.offline && (
+              <View style={styles.offlineBadge}>
+                <Text style={styles.offlineBadgeText}>📵 Will sync when you're back online</Text>
+              </View>
+            )}
             {successData && (
               <View style={[styles.savedPreview, { borderColor: (CAT_COLORS[successData.category] || '#888') + '40' }]}>
                 <Text style={styles.savedIcon}>{CAT_ICONS[successData.category] || '📦'}</Text>
@@ -383,4 +415,9 @@ const styles = StyleSheet.create({
   modalBtnSecondaryText: { fontSize: 14, fontWeight: '600', color: '#F5F5F0' },
   modalBtnPrimary: { flex: 1, backgroundColor: '#C8F135', borderRadius: 12, padding: 14, alignItems: 'center' },
   modalBtnPrimaryText: { fontSize: 14, fontWeight: '700', color: '#0F0F0F' },
+  offlineBadge: {
+    backgroundColor: '#1A0A00', borderRadius: 10, padding: 10,
+    borderWidth: 1, borderColor: '#FF6B6B30', marginBottom: 12, width: '100%',
+  },
+  offlineBadgeText: { fontSize: 12, color: '#FFB347', textAlign: 'center' },
 });

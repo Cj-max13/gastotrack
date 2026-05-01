@@ -8,6 +8,9 @@ import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import CustomAlert, { useCustomAlert } from './components/CustomAlert';
+import OfflineBanner from './components/OfflineBanner';
+import { subscribeToNetwork, syncQueue } from './services/OfflineManager';
+import { postTransaction } from './Services/api';
 import BudgetScreen from './screens/BudgetScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import TransactionsScreen from './screens/TransactionScreen';
@@ -34,6 +37,7 @@ function MainTabs({ user, onLogout }) {
   return (
     <>
       <CustomAlert {...alertProps} />
+      <OfflineBanner />
       <Tab.Navigator
       screenOptions={{
         headerStyle: { backgroundColor: '#0F0F0F', shadowColor: 'transparent', borderBottomWidth: 0 },
@@ -184,6 +188,27 @@ function App() {
     await AsyncStorage.removeItem('user');
     setUser(null);
   };
+
+  // Auto-sync queued transactions when coming back online
+  useEffect(() => {
+    const unsubscribe = subscribeToNetwork(
+      async () => {
+        // Back online — sync the queue
+        try {
+          const { synced } = await syncQueue(postTransaction);
+          if (synced > 0) {
+            console.log(`Synced ${synced} offline transaction(s)`);
+          }
+        } catch {
+          // Silent fail
+        }
+      },
+      () => {
+        // Went offline — nothing to do, OfflineBanner handles UI
+      }
+    );
+    return unsubscribe;
+  }, []);
 
   if (checking) {
     return <SplashScreen />;
