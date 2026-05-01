@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { getTransactions } from '../Services/api';
 import { useFocusEffect } from '@react-navigation/native';
-import { getQueue, getLastSyncTime } from '../services/OfflineManager';
+import { getQueue, getLastSyncTime } from '../Services/OfflineManager';
 
 const CAT_COLORS = {
   food: '#FF6B6B',

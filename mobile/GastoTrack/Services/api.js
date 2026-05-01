@@ -1,7 +1,7 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CONFIG from '../config';
-import { cacheTransactions, getCachedTransactions, addToCache } from '../services/OfflineManager';
+import { cacheTransactions, getCachedTransactions, addToCache } from '../Services/OfflineManager';
 
 // ── Axios instance with auto-injected JWT ──
 const api = axios.create({ baseURL: CONFIG.API_URL });

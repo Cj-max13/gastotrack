@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { postTransaction, previewCategorize } from '../Services/api';
 import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
-import { isOnline, addToQueue, addToCache } from '../services/OfflineManager';
+import { isOnline, addToQueue, addToCache } from '../Services/OfflineManager';
 
 const EXAMPLES = [
   'Spent ₱150 at Jollibee',

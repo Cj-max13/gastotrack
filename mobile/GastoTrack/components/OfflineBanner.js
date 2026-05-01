@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
+import { getQueue } from '../Services/OfflineManager';
 import useNetworkStatus from '../hooks/useNetworkStatus';
-import { getQueue } from '../services/OfflineManager';
 
 export default function OfflineBanner() {
   const { isOnline, isChecking } = useNetworkStatus();

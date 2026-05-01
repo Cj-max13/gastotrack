@@ -9,9 +9,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
-const QUEUE_KEY      = 'offline_queue';
-const CACHE_KEY      = 'cached_transactions';
-const LAST_SYNC_KEY  = 'last_sync_time';
+const QUEUE_KEY     = 'offline_queue';
+const CACHE_KEY     = 'cached_transactions';
+const LAST_SYNC_KEY = 'last_sync_time';
 
 // ── Network status ────────────────────────────────────────────────────────────
 export async function isOnline() {
@@ -68,7 +68,6 @@ export async function cacheTransactions(transactions) {
 
 export async function addToCache(transaction) {
   const cached = await getCachedTransactions();
-  // Add to front (most recent first)
   cached.unshift(transaction);
   await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cached));
 }
@@ -89,7 +88,6 @@ export async function syncQueue(postTransactionFn) {
     try {
       const result = await postTransactionFn(item.text);
       await removeFromQueue(item.id);
-      // Update cache with the server-saved version
       await addToCache(result.data);
       synced++;
     } catch {
