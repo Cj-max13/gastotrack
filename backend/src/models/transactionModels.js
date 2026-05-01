@@ -16,3 +16,11 @@ exports.getAll = async (userId) => {
   );
   return result.rows;
 };
+
+exports.deleteByCategory = async (category, userId) => {
+  const result = await pool.query(
+    "DELETE FROM transactions WHERE category = $1 AND user_id = $2 RETURNING id",
+    [category, userId]
+  );
+  return result.rowCount;
+};

@@ -17,3 +17,13 @@ exports.getTransactions = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.resetCategory = async (req, res) => {
+  try {
+    const { category } = req.params;
+    const deleted = await transactionService.resetCategory(category, req.userId);
+    res.json({ deleted, category, message: `Reset ${deleted} transaction(s) in ${category}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

@@ -29,3 +29,7 @@ exports.processRaw = async (text, userId) => {
 exports.getTransactions = async (userId) => {
   return await transactionModel.getAll(userId);
 };
+
+exports.resetCategory = async (category, userId) => {
+  return await transactionModel.deleteByCategory(category, userId);
+};

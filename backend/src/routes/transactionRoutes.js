@@ -8,5 +8,6 @@ router.use(auth);
 
 router.post("/raw", controller.createTransaction);
 router.get("/", controller.getTransactions);
+router.delete("/reset/:category", controller.resetCategory);
 
 module.exports = router;

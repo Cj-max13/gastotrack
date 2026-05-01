@@ -4,9 +4,10 @@ import {
   RefreshControl, Dimensions, ActivityIndicator, Animated,
 } from 'react-native';
 import { BarChart } from 'react-native-chart-kit';
-import { getTransactions, getInsights } from '../Services/api';
+import { getTransactions, getInsights, resetCategorySpending } from '../Services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
 
@@ -29,6 +30,8 @@ export default function DashboardScreen({ navigation }) {
   const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [error, setError]               = useState(null);
+  const [resetting, setResetting]       = useState(null); // category being reset
+  const { alertProps, showAlert }       = useCustomAlert();
 
   // ── Animations ──
   const heroScale   = useRef(new Animated.Value(0.92)).current;
@@ -95,6 +98,38 @@ export default function DashboardScreen({ navigation }) {
     load();
   }, []);
 
+  const handleReset = (category, spent) => {
+    showAlert({
+      icon: '🔄',
+      title: `Reset ${category}?`,
+      message: `This will delete all ₱${spent.toLocaleString()} worth of ${category} transactions and reset your spending to ₱0.\n\nThis cannot be undone.`,
+      buttons: [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            setResetting(category);
+            try {
+              await resetCategorySpending(category);
+              // Reload dashboard with fresh data
+              setLoading(true);
+              load();
+            } catch {
+              showAlert({
+                icon: '❌',
+                title: 'Reset Failed',
+                message: 'Could not reset spending. Make sure the backend is running.',
+              });
+            } finally {
+              setResetting(null);
+            }
+          },
+        },
+      ],
+    });
+  };
+
   const total = transactions.reduce((s, t) => s + parseFloat(t.amount || 0), 0);
   const avg = transactions.length ? total / transactions.length : 0;
 
@@ -122,6 +157,7 @@ export default function DashboardScreen({ navigation }) {
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#C8F135" />}
     >
+      <CustomAlert {...alertProps} />
       {/* HERO CARD */}
       <Animated.View style={{ transform: [{ scale: heroScale }], opacity: heroOpacity }}>
         <View style={styles.hero}>
@@ -222,16 +258,19 @@ export default function DashboardScreen({ navigation }) {
 
           {/* Budget Status */}
           {Object.entries(insights.budget_status || {}).map(([cat, info]) => (
-            <View key={cat} style={styles.budgetRow}>
+            <View key={cat} style={[
+              styles.budgetRow,
+              info.status === 'over' && styles.budgetRowOver,
+            ]}>
               <View style={styles.budgetHeader}>
                 <Text style={styles.budgetCat}>
                   {CAT_ICONS[cat] || '📦'} {cat}
                 </Text>
                 <Text style={[
                   styles.budgetPct,
-                  info.status === 'over' && { color: '#FF6B6B' },
+                  info.status === 'over'    && { color: '#FF6B6B' },
                   info.status === 'warning' && { color: '#FFE66D' },
-                  info.status === 'ok' && { color: '#C8F135' },
+                  info.status === 'ok'      && { color: '#C8F135' },
                 ]}>
                   {info.percentage_used}%
                 </Text>
@@ -242,14 +281,29 @@ export default function DashboardScreen({ navigation }) {
                   {
                     width: `${Math.min(info.percentage_used, 100)}%`,
                     backgroundColor:
-                      info.status === 'over' ? '#FF6B6B' :
+                      info.status === 'over'    ? '#FF6B6B' :
                       info.status === 'warning' ? '#FFE66D' : '#C8F135',
                   },
                 ]} />
               </View>
-              <Text style={styles.budgetSub}>
-                ₱{info.spent.toLocaleString()} / ₱{info.budget.toLocaleString()}
-              </Text>
+              <View style={styles.budgetFooter}>
+                <Text style={styles.budgetSub}>
+                  ₱{info.spent.toLocaleString()} / ₱{info.budget.toLocaleString()}
+                </Text>
+                {info.status === 'over' && (
+                  <TouchableOpacity
+                    style={styles.resetBtn}
+                    onPress={() => handleReset(cat, info.spent)}
+                    disabled={resetting === cat}
+                  >
+                    {resetting === cat ? (
+                      <ActivityIndicator size="small" color="#FF6B6B" />
+                    ) : (
+                      <Text style={styles.resetBtnText}>🔄 Reset</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           ))}
 
@@ -373,12 +427,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#181818', borderRadius: 12, padding: 14,
     marginBottom: 8, borderWidth: 1, borderColor: '#222',
   },
+  budgetRowOver: {
+    borderColor: '#FF6B6B40',
+    backgroundColor: '#1A0A0A',
+  },
   budgetHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   budgetCat: { fontSize: 13, fontWeight: '600', color: '#F5F5F0', textTransform: 'capitalize' },
   budgetPct: { fontSize: 13, fontWeight: '700' },
-  budgetBarBg: { height: 6, backgroundColor: '#2A2A2A', borderRadius: 3, overflow: 'hidden', marginBottom: 6 },
+  budgetBarBg: { height: 6, backgroundColor: '#2A2A2A', borderRadius: 3, overflow: 'hidden', marginBottom: 8 },
   budgetBarFill: { height: 6, borderRadius: 3 },
+  budgetFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   budgetSub: { fontSize: 11, color: '#5A5A54' },
+  resetBtn: {
+    backgroundColor: '#2A1515', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1, borderColor: '#FF6B6B40',
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+  },
+  resetBtnText: { fontSize: 11, color: '#FF6B6B', fontWeight: '600' },
 
   suggestionsBox: {
     backgroundColor: '#161f0a', borderRadius: 14, padding: 16,

@@ -40,6 +40,9 @@ export const postTransaction = async (text) => {
   return res;
 };
 
+export const resetCategorySpending = (category) =>
+  api.delete(`/transactions/reset/${encodeURIComponent(category)}`);
+
 // ── AI Service ──
 export const getInsights = (transactions, budgets = null) =>
   axios.post(`${CONFIG.AI_URL}/ai/insights`, { transactions, budgets });
