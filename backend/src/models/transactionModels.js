@@ -17,6 +17,17 @@ exports.getAll = async (userId) => {
   return result.rows;
 };
 
+exports.updateById = async (id, { amount, merchant, category }, userId) => {
+  const result = await pool.query(
+    `UPDATE transactions
+     SET amount = $1, merchant = $2, category = $3
+     WHERE id = $4 AND user_id = $5
+     RETURNING *`,
+    [amount, merchant, category, id, userId]
+  );
+  return result.rows[0] || null;
+};
+
 exports.deleteByCategory = async (category, userId) => {
   const result = await pool.query(
     "DELETE FROM transactions WHERE category = $1 AND user_id = $2 RETURNING id",

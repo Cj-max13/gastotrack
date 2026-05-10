@@ -2,7 +2,7 @@
  * GastoTrack — Server Configuration
  *
  * LOCAL DEV:  Uses your PC's local IP — phone must be on same WiFi.
- * PRODUCTION: Swap to Railway URLs once deployed.
+ * PRODUCTION: Swap to Railway URLs once deployed on railway.app.
  */
 
 // ── LOCAL DEVELOPMENT ────────────────────────────────────────────────────────

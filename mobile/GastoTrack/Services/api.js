@@ -19,6 +19,9 @@ export const register = (name, email, password) =>
 export const login = (email, password) =>
   axios.post(`${CONFIG.API_URL}/auth/login`, { email, password });
 
+export const deleteAccount = (password) =>
+  api.delete('/auth/account', { data: { password } });
+
 // ── Transactions (online + offline cache) ──
 export const getTransactions = async () => {
   try {
@@ -35,8 +38,12 @@ export const getTransactions = async () => {
 
 export const postTransaction = async (text) => {
   const res = await api.post('/transactions/raw', { text });
-  // Add to local cache immediately
   await addToCache(res.data);
+  return res;
+};
+
+export const updateTransaction = async (id, { amount, merchant, category }) => {
+  const res = await api.put(`/transactions/${id}`, { amount, merchant, category });
   return res;
 };
 

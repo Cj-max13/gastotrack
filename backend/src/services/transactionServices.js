@@ -40,6 +40,10 @@ exports.resetCategory = async (category, spentAmount, userId) => {
   return { category, offset: spentAmount };
 };
 
+exports.updateTransaction = async (id, fields, userId) => {
+  return await transactionModel.updateById(id, fields, userId);
+};
+
 exports.getCategoryOffsets = async (userId) => {
   return await transactionModel.getCategoryOffsets(userId);
 };

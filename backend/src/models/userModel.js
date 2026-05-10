@@ -24,3 +24,8 @@ exports.findById = async (id) => {
   );
   return result.rows[0] || null;
 };
+
+exports.deleteById = async (id) => {
+  // Cascades to transactions and category_resets via ON DELETE CASCADE
+  await pool.query("DELETE FROM users WHERE id = $1", [id]);
+};

@@ -9,5 +9,6 @@ router.post("/raw", controller.createTransaction);
 router.get("/", controller.getTransactions);
 router.get("/offsets", controller.getCategoryOffsets);
 router.post("/reset/:category", controller.resetCategory);
+router.put("/:id", controller.updateTransaction);
 
 module.exports = router;

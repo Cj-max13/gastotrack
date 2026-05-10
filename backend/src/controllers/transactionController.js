@@ -38,6 +38,21 @@ exports.resetCategory = async (req, res) => {
   }
 };
 
+exports.updateTransaction = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, merchant, category } = req.body;
+    if (!amount || !merchant || !category) {
+      return res.status(400).json({ error: 'amount, merchant, and category are required' });
+    }
+    const updated = await transactionService.updateTransaction(id, { amount, merchant, category }, req.userId);
+    if (!updated) return res.status(404).json({ error: 'Transaction not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.getCategoryOffsets = async (req, res) => {
   try {
     const offsets = await transactionService.getCategoryOffsets(req.userId);

@@ -67,3 +67,26 @@ exports.me = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.deleteAccount = async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password)
+      return res.status(400).json({ error: "Password is required to delete your account." });
+
+    const user = await userModel.findByEmail(
+      (await userModel.findById(req.userId))?.email
+    );
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid)
+      return res.status(401).json({ error: "Incorrect password." });
+
+    await userModel.deleteById(req.userId);
+    res.json({ message: "Account deleted successfully." });
+  } catch (err) {
+    console.error("Delete account error:", err);
+    res.status(500).json({ error: "Failed to delete account." });
+  }
+};
