@@ -12,16 +12,24 @@ import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
 const { width } = Dimensions.get('window');
 
 const CAT_COLORS = {
-  food: '#FF6B6B',
-  transport: '#4ECDC4',
-  entertainment: '#FFE66D',
-  other: '#A8A8A0',
+  food:          '#FF6B6B',
+  transport:     '#4ECDC4',
+  entertainment: '#45B7D1',
+  shopping:      '#96CEB4',
+  bills:         '#FFEAA7',
+  health:        '#DDA0DD',
+  savings:       '#C8F135',
+  other:         '#888888',
 };
 const CAT_ICONS = {
-  food: '🍔',
-  transport: '🚗',
-  entertainment: '🎬',
-  other: '📦',
+  food:          '🍔',
+  transport:     '🚗',
+  entertainment: '�',
+  shopping:      '🛍️',
+  bills:         '📱',
+  health:        '💊',
+  savings:       '💰',
+  other:         '📦',
 };
 
 const PERIODS = ['Daily', 'Weekly', 'Monthly', 'Yearly'];
