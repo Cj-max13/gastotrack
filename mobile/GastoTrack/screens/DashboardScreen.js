@@ -104,8 +104,8 @@ export default function DashboardScreen({ navigation }) {
   const load = async () => {
     try {
       setError(null);
-      const res = await getTransactions();
-      const txList = res.data;
+      const res = await getTransactions({ limit: 200 }); // load enough for dashboard charts
+      const txList = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
       setTransactions(txList);
 
       if (txList.length > 0) {

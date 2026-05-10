@@ -274,9 +274,10 @@ function MainTabs({ user, onLogout }) {
         />
         <Tab.Screen
           name="Settings"
-          component={(props) => <SettingsScreen {...props} onLogout={onLogout} />}
           options={{ title: 'Settings' }}
-        />
+        >
+          {(props) => <SettingsScreen {...props} onLogout={onLogout} />}
+        </Tab.Screen>
       </Tab.Navigator>
     </>
   );

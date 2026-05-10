@@ -47,14 +47,21 @@ def _backend_post(path: str, body: dict, token: str) -> Any:
 
 # ── Tool implementations ──────────────────────────────────────────────────────
 
-def tool_get_transactions(token: str, limit: int = 20) -> dict:
+def tool_get_transactions(token: str, limit: int = 100) -> dict:
     """Fetch the user's recent transactions from the backend."""
     try:
-        txs = _backend_get("/transactions", token)
-        recent = txs[:limit] if isinstance(txs, list) else []
+        result = _backend_get(f"/transactions?limit={limit}&sortBy=created_at&sortDir=DESC", token)
+        # Handle paginated response shape { data: [...], total, page }
+        if isinstance(result, dict) and "data" in result:
+            txs = result["data"]
+        elif isinstance(result, list):
+            txs = result
+        else:
+            txs = []
+
         return {
             "success": True,
-            "count": len(recent),
+            "count": len(txs),
             "transactions": [
                 {
                     "id": t.get("id"),
@@ -62,8 +69,9 @@ def tool_get_transactions(token: str, limit: int = 20) -> dict:
                     "merchant": t.get("merchant", "Unknown"),
                     "category": t.get("category", "other"),
                     "date": t.get("created_at", ""),
+                    "source": t.get("source", "manual"),
                 }
-                for t in recent
+                for t in txs
             ],
         }
     except Exception as e:
@@ -73,9 +81,19 @@ def tool_get_transactions(token: str, limit: int = 20) -> dict:
 def tool_get_spending_summary(token: str) -> dict:
     """Calculate total spending and breakdown by category."""
     try:
-        txs = _backend_get("/transactions", token)
-        if not isinstance(txs, list):
+        result = _backend_get("/transactions?limit=200&sortBy=created_at&sortDir=DESC", token)
+        # Handle paginated response shape
+        if isinstance(result, dict) and "data" in result:
+            txs = result["data"]
+        elif isinstance(result, list):
+            txs = result
+        else:
             return {"success": False, "error": "No transactions found"}
+
+        if not txs:
+            return {"success": True, "total_spent": 0, "transaction_count": 0,
+                    "average_transaction": 0, "top_category": None,
+                    "by_category": {}, "by_category_count": {}}
 
         total = 0.0
         by_category: dict[str, float] = {}
@@ -105,42 +123,45 @@ def tool_get_spending_summary(token: str) -> dict:
 
 
 def tool_get_budget_status(token: str, budgets: dict | None = None) -> dict:
-    """Check budget usage per category against user-defined or default limits."""
+    """Check budget usage per category against the backend budget limits."""
     try:
-        txs = _backend_get("/transactions", token)
-        if not isinstance(txs, list):
-            return {"success": False, "error": "No transactions found"}
+        # Use the real /budget endpoint which has actual user limits
+        budget_data = _backend_get("/budget", token)
+        if not isinstance(budget_data, dict):
+            return {"success": False, "error": "Could not fetch budget data"}
 
-        limits = {**DEFAULT_BUDGETS, **(budgets or {})}
-        by_category: dict[str, float] = {}
-        for t in txs:
-            cat = t.get("category", "other")
-            by_category[cat] = by_category.get(cat, 0.0) + float(t.get("amount", 0))
-
+        categories = budget_data.get("categories", [])
         status = {}
         alerts = []
-        for cat, spent in by_category.items():
-            limit = limits.get(cat, DEFAULT_BUDGETS["other"])
-            pct = round((spent / limit) * 100, 1)
-            s = "ok" if pct < 80 else ("warning" if pct < 100 else "over")
-            status[cat] = {
+
+        for cat in categories:
+            name  = cat.get("name", "other")
+            spent = float(cat.get("spent", 0))
+            limit = float(cat.get("budget_limit", 0))
+            pct   = cat.get("percentage") or 0
+            s     = cat.get("status", "ok")
+
+            status[name] = {
                 "spent": round(spent, 2),
                 "budget": limit,
                 "percentage_used": pct,
                 "status": s,
-                "remaining": round(max(limit - spent, 0), 2),
+                "remaining": round(float(cat.get("remaining") or 0), 2),
             }
             if s == "over":
-                alerts.append(f"{cat}: over by ₱{round(spent - limit, 2):,.0f}")
+                alerts.append(f"{name}: over budget by ₱{round(spent - limit, 2):,.0f}")
             elif s == "warning":
-                alerts.append(f"{cat}: {pct}% used, ₱{round(limit - spent, 2):,.0f} left")
+                alerts.append(f"{name}: {pct}% used, ₱{round(max(limit - spent, 0), 2):,.0f} left")
 
         return {
             "success": True,
+            "monthly_budget": budget_data.get("monthly_budget", 0),
+            "total_spent": budget_data.get("total_spent", 0),
+            "overall_status": budget_data.get("overall_status", "ok"),
             "budget_status": status,
             "alerts": alerts,
-            "over_budget_categories": [c for c, v in status.items() if v["status"] == "over"],
-            "warning_categories": [c for c, v in status.items() if v["status"] == "warning"],
+            "over_budget_categories":  [c for c, v in status.items() if v["status"] == "over"],
+            "warning_categories":      [c for c, v in status.items() if v["status"] == "warning"],
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -149,7 +170,13 @@ def tool_get_budget_status(token: str, budgets: dict | None = None) -> dict:
 def tool_add_transaction(text: str, token: str) -> dict:
     """Add a new transaction by natural language text."""
     try:
-        result = _backend_post("/transactions/raw", {"text": text}, token)
+        result = _backend_post("/transactions/manual", {"text": text}, token)
+        if result.get("duplicate"):
+            return {
+                "success": True,
+                "duplicate": True,
+                "message": "That transaction was already recorded.",
+            }
         return {
             "success": True,
             "saved": {
@@ -166,8 +193,12 @@ def tool_add_transaction(text: str, token: str) -> dict:
 def tool_get_top_merchants(token: str, top_n: int = 5) -> dict:
     """Find the merchants the user spends the most at."""
     try:
-        txs = _backend_get("/transactions", token)
-        if not isinstance(txs, list):
+        result = _backend_get(f"/transactions?limit=200", token)
+        if isinstance(result, dict) and "data" in result:
+            txs = result["data"]
+        elif isinstance(result, list):
+            txs = result
+        else:
             return {"success": False, "error": "No transactions found"}
 
         merchants: dict[str, float] = {}
@@ -192,39 +223,79 @@ def tool_get_recent_transactions(token: str, n: int = 5) -> dict:
     return result
 
 
+def tool_get_monthly_summary(token: str) -> dict:
+    """Get spending summary for the current month only."""
+    try:
+        from datetime import datetime
+        now = datetime.now()
+        date_from = now.strftime("%Y-%m-01")
+        result = _backend_get(
+            f"/transactions?limit=200&dateFrom={date_from}&sortBy=created_at&sortDir=DESC",
+            token
+        )
+        if isinstance(result, dict) and "data" in result:
+            txs = result["data"]
+        elif isinstance(result, list):
+            txs = result
+        else:
+            txs = []
+
+        total = sum(float(t.get("amount", 0)) for t in txs)
+        by_cat: dict[str, float] = {}
+        for t in txs:
+            cat = t.get("category", "other")
+            by_cat[cat] = by_cat.get(cat, 0.0) + float(t.get("amount", 0))
+
+        return {
+            "success": True,
+            "month": now.strftime("%B %Y"),
+            "total_spent": round(total, 2),
+            "transaction_count": len(txs),
+            "by_category": {k: round(v, 2) for k, v in sorted(by_cat.items(), key=lambda x: -x[1])},
+            "top_category": max(by_cat, key=by_cat.get) if by_cat else None,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ── Tool registry ─────────────────────────────────────────────────────────────
 TOOLS = {
-    "get_transactions":       tool_get_transactions,
-    "get_spending_summary":   tool_get_spending_summary,
-    "get_budget_status":      tool_get_budget_status,
-    "add_transaction":        tool_add_transaction,
-    "get_top_merchants":      tool_get_top_merchants,
+    "get_transactions":        tool_get_transactions,
+    "get_spending_summary":    tool_get_spending_summary,
+    "get_budget_status":       tool_get_budget_status,
+    "add_transaction":         tool_add_transaction,
+    "get_top_merchants":       tool_get_top_merchants,
     "get_recent_transactions": tool_get_recent_transactions,
+    "get_monthly_summary":     tool_get_monthly_summary,
 }
 
 TOOL_DESCRIPTIONS = """
 Available tools (call by responding with JSON action):
 
-1. get_transactions — Fetch all user transactions
+1. get_monthly_summary — Spending for the current month
    Args: {}
 
-2. get_spending_summary — Total spent + breakdown by category
+2. get_spending_summary — All-time total + breakdown by category
    Args: {}
 
-3. get_budget_status — Check budget usage per category
+3. get_budget_status — Budget usage per category with alerts
    Args: {}
 
-4. add_transaction — Add a transaction from natural language
-   Args: {"text": "Spent ₱150 at Jollibee"}
-
-5. get_top_merchants — Top merchants by spending
-   Args: {"top_n": 5}
-
-6. get_recent_transactions — Most recent N transactions
+4. get_recent_transactions — Most recent N transactions
    Args: {"n": 5}
 
-To call a tool, respond ONLY with valid JSON:
+5. get_top_merchants — Top merchants by total spending
+   Args: {"top_n": 5}
+
+6. get_transactions — All transactions (paginated)
+   Args: {"limit": 50}
+
+7. add_transaction — Save a new expense from natural language
+   Args: {"text": "Spent ₱150 at Jollibee"}
+
+To call a tool, respond ONLY with valid JSON (no extra text):
 {"action": "tool_name", "args": {...}}
 
 To give a final answer to the user, respond with plain text (no JSON).
+Always use tools to get real data — never guess or make up numbers.
 """

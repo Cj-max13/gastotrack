@@ -5,6 +5,7 @@ const rateLimit  = require("express-rate-limit");
 
 const authRoutes        = require("./routes/authRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
+const budgetRoutes      = require("./routes/budgetRoutes");
 const downloadRoutes    = require("./routes/downloadRoutes");
 
 const app = express();
@@ -37,9 +38,10 @@ const authLimiter = rateLimit({
   message: { error: "Too many login attempts. Please try again in 15 minutes." },
 });
 
-app.use("/auth", authLimiter, authRoutes);
+app.use("/auth",         authLimiter, authRoutes);
 app.use("/transactions", transactionRoutes);
-app.use("/download", downloadRoutes);
+app.use("/budget",       budgetRoutes);
+app.use("/download",     downloadRoutes);
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 

@@ -116,13 +116,16 @@ export default function GastoAvatar({ size = 130, talking = false, thinking = fa
       transform: [{ translateY: floatY }, { translateX: wobbleX }],
     }]}>
 
-      {/* Glow ring */}
-      <Animated.View style={[styles.glowRing, {
-        width: 112 * s, height: 112 * s, borderRadius: 56 * s,
-        borderColor: thinking ? C.accent : C.bodyLight,
-        opacity: glowPulse,
-        transform: [{ scale: ringPulse }],
-      }]} />
+      {/* Glow ring — split into two views to avoid native/JS driver conflict */}
+      {/* Outer: opacity animated with JS driver (useNativeDriver: false) */}
+      <Animated.View style={{ opacity: glowPulse }}>
+        {/* Inner: scale animated with native driver (useNativeDriver: true) */}
+        <Animated.View style={[styles.glowRing, {
+          width: 112 * s, height: 112 * s, borderRadius: 56 * s,
+          borderColor: thinking ? C.accent : C.bodyLight,
+          transform: [{ scale: ringPulse }],
+        }]} />
+      </Animated.View>
 
       {/* Hair */}
       <Animated.View style={[styles.hairLayer, { transform: [{ translateY: hairBounce }] }]}>
@@ -141,7 +144,7 @@ export default function GastoAvatar({ size = 130, talking = false, thinking = fa
         marginTop: 10 * s,
       }]}>
 
-        {/* Face glow */}
+        {/* Face glow — JS driver only (opacity), no transform */}
         <Animated.View style={[styles.faceGlow, {
           width: 72 * s, height: 72 * s, borderRadius: 36 * s,
           backgroundColor: C.bodyGlow,

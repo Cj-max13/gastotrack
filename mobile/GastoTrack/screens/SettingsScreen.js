@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Switch, TextInput, Modal,
   KeyboardAvoidingView, Platform, ActivityIndicator,
+  Linking, NativeModules,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
@@ -232,6 +233,56 @@ export default function SettingsScreen({ navigation, onLogout }) {
         />
       </Section>
 
+      {/* Notification Access */}
+      <Section title="AUTO-CAPTURE">
+        <View style={styles.notifCard}>
+          <View style={styles.notifHeader}>
+            <Text style={styles.notifIcon}>🔔</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.notifTitle}>Notification Access</Text>
+              <Text style={styles.notifSub}>
+                Required to auto-capture GCash, PayMaya, and bank transactions
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.notifSteps}>
+            {[
+              'Tap "Open Settings" below',
+              'Find GastoTrack in the list',
+              'Toggle it ON',
+              'Come back — done! 🎉',
+            ].map((step, i) => (
+              <View key={i} style={styles.notifStep}>
+                <View style={styles.notifStepNum}>
+                  <Text style={styles.notifStepNumText}>{i + 1}</Text>
+                </View>
+                <Text style={styles.notifStepText}>{step}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.notifApps}>
+            <Text style={styles.notifAppsLabel}>Captures from:</Text>
+            <Text style={styles.notifAppsList}>
+              GCash · Maya · BDO · BPI · Metrobank · UnionBank · RCBC · PNB
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.notifBtn}
+            onPress={() => {
+              // Opens Android Notification Access settings
+              Linking.openSettings().catch(() => {
+                Linking.openURL('android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS');
+              });
+            }}
+          >
+            <Text style={styles.notifBtnText}>⚙️ Open Notification Settings</Text>
+          </TouchableOpacity>
+        </View>
+      </Section>
+
       {/* Account */}
       <Section title="ACCOUNT">
         <Row
@@ -348,6 +399,34 @@ const styles = StyleSheet.create({
   footer: {
     textAlign: 'center', fontSize: 12, color: '#3A3A3A', marginTop: 8,
   },
+
+  // ── Notification Access card ──
+  notifCard: {
+    padding: 16,
+  },
+  notifHeader: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 16,
+  },
+  notifIcon: { fontSize: 28, marginTop: 2 },
+  notifTitle: { fontSize: 14, fontWeight: '700', color: '#F5F5F0', marginBottom: 3 },
+  notifSub:   { fontSize: 12, color: '#5A5A54', lineHeight: 17 },
+  notifSteps: { gap: 10, marginBottom: 16 },
+  notifStep:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  notifStepNum: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#C8F135',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  notifStepNumText: { fontSize: 11, fontWeight: '800', color: '#0F0F0F' },
+  notifStepText:    { fontSize: 13, color: '#9A9A92', flex: 1 },
+  notifApps: { marginBottom: 16 },
+  notifAppsLabel: { fontSize: 10, fontWeight: '600', color: '#5A5A54', letterSpacing: 0.8, marginBottom: 4 },
+  notifAppsList:  { fontSize: 12, color: '#3A3A3A', lineHeight: 18 },
+  notifBtn: {
+    backgroundColor: '#C8F135', borderRadius: 12,
+    padding: 14, alignItems: 'center',
+  },
+  notifBtnText: { fontSize: 14, fontWeight: '700', color: '#0F0F0F' },
 
   // ── Delete Account Modal ──
   modalOverlay: {

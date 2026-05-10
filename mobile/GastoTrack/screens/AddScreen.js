@@ -4,7 +4,7 @@ import {
   StyleSheet, ActivityIndicator, KeyboardAvoidingView,
   Platform, ScrollView, Modal, Animated,
 } from 'react-native';
-import { postTransaction, previewCategorize } from '../Services/api';
+import { postManualTransaction, previewCategorize } from '../Services/api';
 import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
 import { isOnline, addToQueue, addToCache } from '../Services/OfflineManager';
 
@@ -167,8 +167,8 @@ export default function AddScreen({ navigation }) {
         setSuccessData({ ...localTx, offline: true });
         setSuccessVisible(true);
       } else {
-        // ── ONLINE: save to server ──
-        const res = await postTransaction(text.trim());
+        // ── ONLINE: save to server via manual endpoint ──
+        const res = await postManualTransaction(text.trim());
         setText('');
         setPreview(null);
         setSuccessData(res.data);
@@ -313,18 +313,14 @@ export default function AddScreen({ navigation }) {
 
         <Text style={styles.examplesLabel}>EXAMPLES — tap to use</Text>
         {EXAMPLES.map((ex, i) => (
-          <Animated.View
+          <TouchableOpacity
             key={i}
-            style={{
-              opacity: entranceOpacity,
-              transform: [{ translateY: Animated.multiply(entranceAnim, new Animated.Value((i + 1) * 0.3)) }],
-            }}
+            style={styles.exampleItem}
+            onPress={() => setText(ex)}
           >
-            <TouchableOpacity style={styles.exampleItem} onPress={() => setText(ex)}>
-              <Text style={styles.exampleText}>{ex}</Text>
-              <Text style={styles.exampleArrow}>↗</Text>
-            </TouchableOpacity>
-          </Animated.View>
+            <Text style={styles.exampleText}>{ex}</Text>
+            <Text style={styles.exampleArrow}>↗</Text>
+          </TouchableOpacity>
         ))}
 
         <View style={styles.infoBox}>
