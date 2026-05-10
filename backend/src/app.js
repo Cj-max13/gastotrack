@@ -10,6 +10,9 @@ const downloadRoutes    = require("./routes/downloadRoutes");
 
 const app = express();
 
+// ── Trust Render/Railway proxy (required for rate limiting behind a load balancer)
+app.set('trust proxy', 1);
+
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(helmet());
 
