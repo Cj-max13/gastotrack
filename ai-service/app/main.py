@@ -28,3 +28,7 @@ app.include_router(chat_router, prefix="/ai")
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "gastotrack-ai", "version": "2.0.0"}
+
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "gastotrack-ai", "version": "2.0.0"}

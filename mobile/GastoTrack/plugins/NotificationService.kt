@@ -30,7 +30,7 @@ class NotificationService : NotificationListenerService() {
         private const val TAG         = "GastoTrack"
         private const val PREFS_NAME  = "gastotrack_prefs"
         private const val PREF_TOKEN  = "auth_token"
-        private const val BACKEND_URL = "https://gastotrack-backend-production.up.railway.app/transactions/raw"
+        private const val BACKEND_URL = "https://gastotrack.onrender.com/transactions/raw"
 
         // GCash and Philippine bank/e-wallet package names
         private val FINANCIAL_PACKAGES = setOf(

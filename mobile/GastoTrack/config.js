@@ -16,8 +16,8 @@
 // ── PRODUCTION (Railway) ──────────────────────────────────────────────────────
 // Replace these URLs with your actual Railway deployment URLs
 const CONFIG = {
-  API_URL: 'https://gastotrack-backend-production.up.railway.app',
-  AI_URL:  'https://gastotrack-ai-production.up.railway.app',
+  API_URL: 'https://gastotrack.onrender.com',
+  AI_URL:  'https://gastotrack-ai.onrender.com',  // update after AI service deploys
 };
 
 export default CONFIG;
