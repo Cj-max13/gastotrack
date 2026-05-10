@@ -2,7 +2,7 @@
  * GastoTrack — Server Configuration
  *
  * LOCAL DEV:  Uses your PC's local IP — phone must be on same WiFi.
- * PRODUCTION: Railway URLs — any phone anywhere can connect.
+ * PRODUCTION: Render URLs — any phone anywhere can connect.
  *
  * Switch between LOCAL and PRODUCTION by commenting/uncommenting below.
  */
@@ -13,11 +13,10 @@
 //   AI_URL:  'http://192.168.0.11:8000',
 // };
 
-// ── PRODUCTION (Railway) ──────────────────────────────────────────────────────
-// Replace these URLs with your actual Railway deployment URLs
+// ── PRODUCTION (Render) ───────────────────────────────────────────────────────
 const CONFIG = {
   API_URL: 'https://gastotrack.onrender.com',
-  AI_URL:  'https://gastotrack-ai.onrender.com',  // update after AI service deploys
+  AI_URL:  'https://gastotrack-1.onrender.com',
 };
 
 export default CONFIG;
