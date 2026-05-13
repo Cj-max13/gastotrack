@@ -16,14 +16,15 @@ import OfflineBanner from './components/OfflineBanner';
 import { subscribeToNetwork, syncQueue } from './Services/OfflineManager';
 import { postTransaction } from './Services/api';
 
-import DashboardScreen  from './screens/DashboardScreen';
+import DashboardScreen    from './screens/DashboardScreen';
+import AnalyticsScreen   from './screens/AnalyticsScreen';
 import TransactionsScreen from './screens/TransactionScreen';
-import AddScreen        from './screens/AddScreen';
-import BudgetScreen     from './screens/BudgetScreen';
-import ChatScreen       from './screens/ChatScreen';
-import LoginScreen      from './screens/LoginScreen';
-import RegisterScreen   from './screens/RegisterScreen';
-import SettingsScreen   from './screens/SettingsScreen';
+import AddScreen         from './screens/AddScreen';
+import BudgetScreen      from './screens/BudgetScreen';
+import ChatScreen        from './screens/ChatScreen';
+import LoginScreen       from './screens/LoginScreen';
+import RegisterScreen    from './screens/RegisterScreen';
+import SettingsScreen    from './screens/SettingsScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -36,150 +37,90 @@ const PILL   = '#1C1C1C';   // pill background
 const ACTIVE = '#C8F135';   // active label
 const INACTIVE = '#6B6B6B'; // inactive label
 
-// ── Custom Tab Bar ────────────────────────────────────────────────────────────
-// Chat is NOT in the pill — accessed via AI button in Dashboard header
-// Settings replaces the old text-only Budget slot
+// ── Tab bar config — matches mockup: Dashboard, Analytics, AI Assistant, Budget, History
 const TAB_CONFIG = [
-  { name: 'Dashboard',    icon: '📊' },
-  { name: 'Transactions', icon: '💸' },
-  { name: 'Add',          icon: null },   // FAB
-  { name: 'Budget',       icon: '🎯' },
-  { name: 'Settings',     icon: '⚙️' },
+  { name: 'Dashboard',  label: 'Dashboard',    icon: '⊞' },
+  { name: 'Analytics',  label: 'Analytics',    icon: '↗' },
+  { name: 'Chat',       label: 'AI\nAssistant', icon: '🤖' },
+  { name: 'Budget',     label: 'Budget',       icon: '▣' },
+  { name: 'Transactions', label: 'History',    icon: '🕐' },
 ];
 
 // Screens that should hide the tab bar entirely
-const HIDDEN_TAB_SCREENS = ['Chat'];
+const HIDDEN_TAB_SCREENS = [];
 
 function CustomTabBar({ state, navigation }) {
   const insets = useSafeAreaInsets();
 
-  // Hide the tab bar entirely on Chat screen
-  const currentRoute = state.routes[state.index]?.name;
-  if (HIDDEN_TAB_SCREENS.includes(currentRoute)) return null;
-
-  const visibleRoutes = state.routes.filter(r =>
-    TAB_CONFIG.some(t => t.name === r.name)
-  );
-
   return (
-    <View style={[navStyles.wrapper, { paddingBottom: insets.bottom + 8 }]}>
-      <View style={navStyles.pill}>
-        {visibleRoutes.map((route) => {
-          const tabCfg  = TAB_CONFIG.find(t => t.name === route.name);
-          const isFocused = state.routes[state.index]?.name === route.name;
+    <View style={[navStyles.wrapper, { paddingBottom: insets.bottom || 8 }]}>
+      {TAB_CONFIG.map((tab, index) => {
+        const route     = state.routes.find(r => r.name === tab.name);
+        if (!route) return null;
+        const isFocused = state.routes[state.index]?.name === tab.name;
+        const isAI      = tab.name === 'Chat';
 
-          // Center FAB (Add)
-          if (route.name === 'Add') {
-            return (
-              <TouchableOpacity
-                key={route.name}
-                style={navStyles.fabWrap}
-                onPress={() => navigation.navigate(route.name)}
-                activeOpacity={0.85}
-              >
-                <View style={[navStyles.fab, isFocused && navStyles.fabActive]}>
-                  <Text style={navStyles.fabIcon}>+</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          }
-
-          // Regular icon tab
-          return (
-            <TouchableOpacity
-              key={route.name}
-              style={navStyles.tabItem}
-              onPress={() => navigation.navigate(route.name)}
-              activeOpacity={0.7}
-            >
-              <Text style={[navStyles.tabIcon, isFocused && navStyles.tabIconActive]}>
-                {tabCfg?.icon}
-              </Text>
-              {isFocused && <View style={navStyles.activeDot} />}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+        return (
+          <TouchableOpacity
+            key={tab.name}
+            style={navStyles.tabItem}
+            onPress={() => navigation.navigate(tab.name)}
+            activeOpacity={0.7}
+          >
+            {isAI ? (
+              <View style={[navStyles.aiFab, isFocused && navStyles.aiFabActive]}>
+                <Text style={navStyles.aiFabIcon}>🤖</Text>
+              </View>
+            ) : (
+              <View style={[navStyles.iconWrap, isFocused && navStyles.iconWrapActive]}>
+                <Text style={[navStyles.tabIcon, isFocused && navStyles.tabIconActive]}>
+                  {tab.icon}
+                </Text>
+              </View>
+            )}
+            <Text style={[navStyles.tabLabel, isFocused && navStyles.tabLabelActive]}>
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
 const navStyles = StyleSheet.create({
   wrapper: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-    paddingHorizontal: 16,
-  },
-  pill: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: PILL,
-    borderRadius: 40,
-    height: 60,
-    width: '100%',
-    paddingHorizontal: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 10,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+    paddingTop: 8,
+    paddingHorizontal: 4,
   },
-
-  // Regular tab
   tabItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3,
   },
-  tabIcon: {
-    fontSize: 22,
-    opacity: 0.4,
+  iconWrap: {
+    width: 32, height: 32, borderRadius: 16,
+    justifyContent: 'center', alignItems: 'center',
   },
-  tabIconActive: {
-    opacity: 1,
+  iconWrapActive: {
+    backgroundColor: '#E0F2F1',
   },
-  activeDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: GREEN,
-    marginTop: 3,
-  },
+  tabIcon:       { fontSize: 18, color: '#9E9E9E' },
+  tabIconActive: { color: '#00897B' },
+  tabLabel:      { fontSize: 10, color: '#9E9E9E', fontWeight: '500', textAlign: 'center' },
+  tabLabelActive:{ color: '#00897B', fontWeight: '700' },
 
-  // Center FAB (Add button)
-  fabWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -28,
+  // AI Assistant center button
+  aiFab: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: '#F0F0F0',
+    justifyContent: 'center', alignItems: 'center',
+    marginTop: -8,
   },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: GREEN,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: GREEN,
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  fabActive: {
-    backgroundColor: '#B8E120',
-  },
-  fabIcon: {
-    fontSize: 28,
-    fontWeight: '300',
-    color: DARK,
-    lineHeight: 32,
-  },
+  aiFabActive: { backgroundColor: '#00897B' },
+  aiFabIcon:   { fontSize: 20 },
 });
 
 function MainTabs({ user, onLogout }) {
@@ -190,18 +131,17 @@ function MainTabs({ user, onLogout }) {
       <CustomAlert {...alertProps} />
       <OfflineBanner />
       <Tab.Navigator
-        tabBar={(props) => (
-          <CustomTabBar {...props} />
-        )}
+        tabBar={(props) => <CustomTabBar {...props} />}
         screenOptions={{
           headerStyle: {
-            backgroundColor: DARK,
+            backgroundColor: '#FFFFFF',
             shadowColor: 'transparent',
-            borderBottomWidth: 0,
+            borderBottomWidth: 1,
+            borderBottomColor: '#EEEEEE',
             elevation: 0,
           },
-          headerTintColor: '#F5F5F0',
-          headerTitleStyle: { fontWeight: '700', fontSize: 18 },
+          headerTintColor: '#1A1A1A',
+          headerTitleStyle: { fontWeight: '700', fontSize: 18, color: '#1A1A1A' },
         }}
       >
         <Tab.Screen
@@ -209,72 +149,69 @@ function MainTabs({ user, onLogout }) {
           component={DashboardScreen}
           options={({ navigation }) => ({
             title: 'GastoTrack',
+            headerLeft: () => (
+              <View style={{ marginLeft: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: '#E0F2F1', justifyContent: 'center', alignItems: 'center' }}>
+                <Text style={{ fontSize: 18 }}>👤</Text>
+              </View>
+            ),
             headerRight: () => (
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12, gap: 8 }}>
-                {/* AI Chat button */}
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('Chat')}
-                  style={{
-                    backgroundColor: GREEN, borderRadius: 20,
-                    paddingHorizontal: 12, paddingVertical: 6,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: DARK, letterSpacing: 0.5 }}>🤖 AI</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 16, gap: 12 }}>
+                <TouchableOpacity onPress={() => navigation.navigate('Add')}>
+                  <Text style={{ fontSize: 22 }}>➕</Text>
                 </TouchableOpacity>
-                {/* Profile / sign out */}
-                <TouchableOpacity
-                  onPress={() => showAlert({
-                    icon: '👤',
-                    title: 'Sign Out',
-                    message: `Signed in as ${user?.name || user?.email}.\nDo you want to sign out?`,
-                    buttons: [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Sign Out', style: 'destructive', onPress: onLogout },
-                    ],
-                  })}
-                >
-                  <Text style={{ fontSize: 22 }}>👤</Text>
+                <TouchableOpacity onPress={() => showAlert({
+                  icon: '👤', title: 'Sign Out',
+                  message: `Signed in as ${user?.name || user?.email}.\nDo you want to sign out?`,
+                  buttons: [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Sign Out', style: 'destructive', onPress: onLogout },
+                  ],
+                })}>
+                  <Text style={{ fontSize: 22 }}>�</Text>
                 </TouchableOpacity>
               </View>
             ),
           })}
         />
         <Tab.Screen
-          name="Transactions"
-          component={TransactionsScreen}
-          options={{ title: 'Expenses' }}
+          name="Analytics"
+          component={AnalyticsScreen}
+          options={{ title: 'Analytics' }}
         />
         <Tab.Screen
-          name="Add"
-          component={AddScreen}
-          options={{ title: 'Add Transaction' }}
+          name="Chat"
+          component={ChatScreen}
+          options={({ navigation }) => ({
+            title: 'Gasto AI',
+            headerLeft: () => (
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                style={{ marginLeft: 16 }}
+              >
+                <Text style={{ fontSize: 20, color: '#1A1A1A' }}>←</Text>
+              </TouchableOpacity>
+            ),
+          })}
         />
         <Tab.Screen
           name="Budget"
           component={BudgetScreen}
           options={{ title: 'Budget' }}
         />
-        {/* Chat is NOT in the pill nav — accessed via AI button in header */}
         <Tab.Screen
-          name="Chat"
-          component={ChatScreen}
-          options={({ navigation }) => ({
-            title: 'Gasto AI',
-            tabBarButton: () => null,   // hide from tab bar completely
-            headerLeft: () => (
-              <TouchableOpacity
-                onPress={() => navigation.navigate('Dashboard')}
-                style={{ marginLeft: 16, flexDirection: 'row', alignItems: 'center', gap: 6 }}
-              >
-                <Text style={{ fontSize: 20, color: '#F5F5F0' }}>←</Text>
-                <Text style={{ fontSize: 14, color: '#F5F5F0', fontWeight: '500' }}>Back</Text>
-              </TouchableOpacity>
-            ),
-          })}
+          name="Transactions"
+          component={TransactionsScreen}
+          options={{ title: 'History' }}
+        />
+        {/* Hidden screens — accessible via navigation but not in tab bar */}
+        <Tab.Screen
+          name="Add"
+          component={AddScreen}
+          options={{ title: 'Add Transaction', tabBarButton: () => null }}
         />
         <Tab.Screen
           name="Settings"
-          options={{ title: 'Settings' }}
+          options={{ title: 'Settings', tabBarButton: () => null }}
         >
           {(props) => <SettingsScreen {...props} onLogout={onLogout} />}
         </Tab.Screen>
