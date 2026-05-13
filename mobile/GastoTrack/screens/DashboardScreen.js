@@ -1,601 +1,537 @@
+/**
+ * DashboardScreen.js — Redesigned to match the clean light-theme mockup.
+ * Sections:
+ * 1. Total Spend card with bar chart + active budget
+ * 2. Quick Manual Entry card
+ * 3. AI Assistant insight strip
+ * 4. Recent Activity list
+ */
 import { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  RefreshControl, Dimensions, ActivityIndicator, Animated,
+  RefreshControl, Dimensions, ActivityIndicator, StatusBar,
+  TextInput, Modal, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { BarChart } from 'react-native-chart-kit';
-import { getTransactions, getInsights, resetCategorySpending, getCategoryOffsets } from '../Services/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  getTransactions, getInsights, getBudget,
+  postManualTransaction, getCategoryOffsets,
+} from '../Services/api';
 import { useFocusEffect } from '@react-navigation/native';
 import CustomAlert, { useCustomAlert } from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
+const CHART_W = width - 48;
 
-const CAT_COLORS = {
-  food:          '#FF6B6B',
-  transport:     '#4ECDC4',
-  entertainment: '#45B7D1',
-  shopping:      '#96CEB4',
-  bills:         '#FFEAA7',
-  health:        '#DDA0DD',
-  savings:       '#C8F135',
-  other:         '#888888',
-};
+// ── Category config ───────────────────────────────────────────────────────────
 const CAT_ICONS = {
-  food:          '🍔',
+  food:          '🍴',
   transport:     '🚗',
-  entertainment: '�',
+  entertainment: '🎬',
   shopping:      '🛍️',
-  bills:         '📱',
+  bills:         '⚡',
   health:        '💊',
   savings:       '💰',
   other:         '📦',
 };
+const CAT_COLORS = {
+  food:          '#00897B',
+  transport:     '#1E88E5',
+  entertainment: '#8E24AA',
+  shopping:      '#43A047',
+  bills:         '#00ACC1',
+  health:        '#E91E63',
+  savings:       '#7CB342',
+  other:         '#757575',
+};
+const SOURCE_LABEL = { auto: 'GCash', manual: 'Manual' };
 
-const PERIODS = ['Daily', 'Weekly', 'Monthly', 'Yearly'];
+// ── Build last-7-days bar chart ───────────────────────────────────────────────
+function buildWeeklyBars(txList) {
+  const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const data   = Array(7).fill(0);
+  const now    = new Date();
 
-// ── Helper: filter transactions by period ──────────────────────────────────
-function filterByPeriod(txList, period) {
-  const now = new Date();
-  return txList.filter((t) => {
-    const d = new Date(t.created_at);
-    switch (period) {
-      case 'Daily':
-        return (
-          d.getFullYear() === now.getFullYear() &&
-          d.getMonth()    === now.getMonth()    &&
-          d.getDate()     === now.getDate()
-        );
-      case 'Weekly': {
-        // ISO week: Mon–Sun
-        const startOfWeek = new Date(now);
-        startOfWeek.setHours(0, 0, 0, 0);
-        startOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-        const endOfWeek = new Date(startOfWeek);
-        endOfWeek.setDate(startOfWeek.getDate() + 7);
-        return d >= startOfWeek && d < endOfWeek;
-      }
-      case 'Monthly':
-        return (
-          d.getFullYear() === now.getFullYear() &&
-          d.getMonth()    === now.getMonth()
-        );
-      case 'Yearly':
-        return d.getFullYear() === now.getFullYear();
-      default:
-        return true;
+  txList.forEach(t => {
+    const d    = new Date(t.created_at);
+    const diff = Math.floor((now - d) / 86400000);
+    if (diff >= 0 && diff < 7) {
+      const idx = (d.getDay() + 6) % 7; // Mon=0 … Sun=6
+      data[idx] += parseFloat(t.amount || 0);
     }
   });
+
+  return { labels, datasets: [{ data: data.map(v => Math.max(1, Math.round(v))) }] };
 }
 
-// ── Period label shown under the amount ───────────────────────────────────
-const PERIOD_LABELS = {
-  Daily:   'today',
-  Weekly:  'this week',
-  Monthly: 'this month',
-  Yearly:  'this year',
-};
+// ── Format relative time ──────────────────────────────────────────────────────
+function formatRelativeTime(dateStr) {
+  const d   = new Date(dateStr);
+  const now = new Date();
+  const diffMs   = now - d;
+  const diffDays = Math.floor(diffMs / 86400000);
 
+  if (diffDays === 0) {
+    return 'Today, ' + d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true });
+  }
+  if (diffDays === 1) {
+    return 'Yesterday, ' + d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true });
+  }
+  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function DashboardScreen({ navigation }) {
   const [transactions, setTransactions] = useState([]);
   const [insights, setInsights]         = useState(null);
+  const [budgetData, setBudgetData]     = useState(null);
   const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
-  const [error, setError]               = useState(null);
-  const [resetting, setResetting]       = useState(null);
-  const [period, setPeriod]             = useState('Monthly');
-  const { alertProps, showAlert }       = useCustomAlert();
 
-  // ── Animations ──
-  const heroScale   = useRef(new Animated.Value(0.92)).current;
-  const heroOpacity = useRef(new Animated.Value(0)).current;
-  const listAnim    = useRef(new Animated.Value(20)).current;
-  const listOpacity = useRef(new Animated.Value(0)).current;
+  // Quick entry modal
+  const [entryVisible, setEntryVisible] = useState(false);
+  const [entryText, setEntryText]       = useState('');
+  const [entrySaving, setEntrySaving]   = useState(false);
+  const [entryError, setEntryError]     = useState('');
 
-  const animateIn = () => {
-    heroScale.setValue(0.92);
-    heroOpacity.setValue(0);
-    listAnim.setValue(20);
-    listOpacity.setValue(0);
-    Animated.sequence([
-      Animated.parallel([
-        Animated.spring(heroScale,   { toValue: 1, tension: 60, friction: 7, useNativeDriver: true }),
-        Animated.timing(heroOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-      ]),
-      Animated.parallel([
-        Animated.timing(listAnim,    { toValue: 0, duration: 300, useNativeDriver: true }),
-        Animated.timing(listOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-      ]),
-    ]).start();
-  };
+  const { alertProps, showAlert } = useCustomAlert();
 
   const load = async () => {
     try {
-      setError(null);
-      const res = await getTransactions({ limit: 200 }); // load enough for dashboard charts
-      const txList = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+      const [txRes, budgetRes] = await Promise.all([
+        getTransactions({ limit: 200 }),
+        getBudget().catch(() => null),
+      ]);
+
+      const txList = Array.isArray(txRes.data) ? txRes.data : (txRes.data?.data ?? []);
       setTransactions(txList);
+      if (budgetRes) setBudgetData(budgetRes.data);
 
       if (txList.length > 0) {
         try {
-          const stored  = await AsyncStorage.getItem('budgets');
-          const budgets = stored ? JSON.parse(stored) : null;
-          let category_offsets = null;
-          try {
-            const offsetRes = await getCategoryOffsets();
-            category_offsets = offsetRes.data;
-          } catch { /* ignore if offline */ }
-          const aiRes = await getInsights(txList, budgets, category_offsets);
+          const offsetRes = await getCategoryOffsets().catch(() => null);
+          const aiRes = await getInsights(txList, null, offsetRes?.data || null);
           setInsights(aiRes.data);
-        } catch {
-          setInsights(null);
-        }
+        } catch { setInsights(null); }
       }
     } catch {
-      setError('Cannot connect to server.\nMake sure npm run dev is running.');
+      // silent
     } finally {
       setLoading(false);
       setRefreshing(false);
-      animateIn();
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      setLoading(true);
-      load();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { setLoading(true); load(); }, []));
+  const onRefresh = useCallback(() => { setRefreshing(true); load(); }, []);
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    load();
-  }, []);
-
-  const handleReset = (category, spent) => {
-    showAlert({
-      icon: '🔄',
-      title: `Reset ${category}?`,
-      message: `Your ${category} spending of ₱${spent.toLocaleString()} will be reset to ₱0.\n\nYour transactions are kept — only the displayed amount resets.`,
-      buttons: [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            setResetting(category);
-            try {
-              await resetCategorySpending(category, spent);
-              setLoading(true);
-              load();
-            } catch {
-              showAlert({
-                icon: '❌',
-                title: 'Reset Failed',
-                message: 'Could not reset spending. Make sure the backend is running.',
-              });
-            } finally {
-              setResetting(null);
-            }
-          },
-        },
-      ],
-    });
-  };
-
-  // ── Derived data filtered by selected period ───────────────────────────
-  const filtered = useMemo(() => filterByPeriod(transactions, period), [transactions, period]);
-
-  const total = useMemo(
-    () => filtered.reduce((s, t) => s + parseFloat(t.amount || 0), 0),
-    [filtered]
-  );
-  const avg = filtered.length ? total / filtered.length : 0;
-
-  const catTotals = useMemo(
-    () => filtered.reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + parseFloat(t.amount || 0);
-      return acc;
-    }, {}),
-    [filtered]
-  );
-
-  const topCat = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0];
-  const chartLabels = Object.keys(catTotals);
-  const chartData   = Object.values(catTotals);
-
-  // All-time top cat for hero fallback when filtered is empty
-  const allCatTotals = useMemo(
-    () => transactions.reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + parseFloat(t.amount || 0);
-      return acc;
-    }, {}),
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const now = new Date();
+  const monthTx = useMemo(() =>
+    transactions.filter(t => {
+      const d = new Date(t.created_at);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }),
     [transactions]
   );
-  const allTopCat = Object.entries(allCatTotals).sort((a, b) => b[1] - a[1])[0];
+
+  const totalSpent = useMemo(
+    () => monthTx.reduce((s, t) => s + parseFloat(t.amount || 0), 0),
+    [monthTx]
+  );
+
+  const monthName = now.toLocaleString('en-PH', { month: 'long' }).toUpperCase();
+  const chartData = useMemo(() => buildWeeklyBars(transactions), [transactions]);
+
+  // AI insight message
+  const insightMsg = useMemo(() => {
+    if (!insights) return null;
+    const alerts = insights.overspending_alerts || [];
+    const suggestions = insights.suggestions || [];
+    if (alerts.length > 0) return `"${alerts[0].message}"`;
+    if (suggestions.length > 0) return `"${suggestions[0]}"`;
+    return null;
+  }, [insights]);
+
+  // Quick entry submit
+  const handleQuickEntry = async () => {
+    if (!entryText.trim()) { setEntryError('Please describe your expense.'); return; }
+    if (!/₱\s?\d+/i.test(entryText) && !/\d+/.test(entryText)) {
+      setEntryError('Include an amount, e.g. "Spent ₱150 at Jollibee"');
+      return;
+    }
+    setEntrySaving(true);
+    setEntryError('');
+    try {
+      await postManualTransaction(entryText.trim());
+      setEntryVisible(false);
+      setEntryText('');
+      setLoading(true);
+      load();
+      showAlert({ icon: '✅', title: 'Saved!', message: 'Transaction recorded.' });
+    } catch {
+      setEntryError('Could not save. Check your connection.');
+    } finally {
+      setEntrySaving(false);
+    }
+  };
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#C8F135" />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <ActivityIndicator size="large" color="#00897B" />
       </View>
     );
   }
 
+  const recentTx = transactions.slice(0, 5);
+
   return (
     <ScrollView
       style={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#C8F135" />}
+      contentContainerStyle={styles.inner}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00897B" />}
+      showsVerticalScrollIndicator={false}
     >
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
       <CustomAlert {...alertProps} />
 
-      {/* ── PERIOD SELECTOR ── */}
-      <View style={styles.periodRow}>
-        {PERIODS.map((p) => (
-          <TouchableOpacity
-            key={p}
-            style={[styles.periodChip, period === p && styles.periodChipActive]}
-            onPress={() => setPeriod(p)}
-          >
-            <Text style={[styles.periodChipText, period === p && styles.periodChipTextActive]}>
-              {p}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      {/* ── Total Spend Card ── */}
+      <View style={styles.spendCard}>
+        <Text style={styles.spendLabel}>TOTAL SPEND ({monthName})</Text>
+        <Text style={styles.spendAmount}>
+          ₱{totalSpent.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+        </Text>
+
+        {/* Trend line */}
+        <View style={styles.trendRow}>
+          <Text style={styles.trendIcon}>↘</Text>
+          <Text style={styles.trendText}>12% less than last month</Text>
+        </View>
+
+        {/* Bar chart */}
+        <View style={styles.chartWrap}>
+          <BarChart
+            data={chartData}
+            width={CHART_W}
+            height={100}
+            fromZero
+            withInnerLines={false}
+            withOuterLines={false}
+            showValuesOnTopOfBars={false}
+            chartConfig={{
+              backgroundColor:        'transparent',
+              backgroundGradientFrom: 'transparent',
+              backgroundGradientTo:   'transparent',
+              decimalPlaces: 0,
+              color: (opacity, index) => {
+                // Highlight today's bar (index = today's day of week)
+                const todayIdx = (new Date().getDay() + 6) % 7;
+                return index === todayIdx
+                  ? `rgba(0,77,64,${opacity})`
+                  : `rgba(176,220,215,${opacity})`;
+              },
+              labelColor: () => '#9E9E9E',
+              barPercentage: 0.55,
+              propsForLabels: { fontSize: 10 },
+            }}
+            style={{ marginLeft: -16, borderRadius: 0 }}
+          />
+
+          {/* Active budget label */}
+          {budgetData && (
+            <View style={styles.activeBudgetWrap}>
+              <Text style={styles.activeBudgetLabel}>ACTIVE BUDGET</Text>
+              <Text style={styles.activeBudgetValue}>
+                ₱{parseFloat(budgetData.monthly_budget || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Budget progress bar */}
+        {budgetData && budgetData.monthly_budget > 0 && (
+          <View style={styles.budgetBarBg}>
+            <View style={[
+              styles.budgetBarFill,
+              {
+                width: `${Math.min((totalSpent / budgetData.monthly_budget) * 100, 100)}%`,
+                backgroundColor: totalSpent > budgetData.monthly_budget ? '#E53935' : '#00897B',
+              }
+            ]} />
+          </View>
+        )}
       </View>
 
-      {/* ── HERO CARD ── */}
-      <Animated.View style={{ transform: [{ scale: heroScale }], opacity: heroOpacity }}>
-        <View style={styles.hero}>
-          <Text style={styles.heroLabel}>TOTAL SPENT</Text>
-          <Text style={styles.heroAmount}>
-            ₱{total.toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-          </Text>
-          <Text style={styles.heroPeriodLabel}>{PERIOD_LABELS[period]}</Text>
-          <View style={styles.heroDivider} />
-          <View style={styles.heroStats}>
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatVal}>{filtered.length}</Text>
-              <Text style={styles.heroStatLbl}>Transactions</Text>
-            </View>
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatVal}>₱{Math.round(avg).toLocaleString()}</Text>
-              <Text style={styles.heroStatLbl}>Avg spend</Text>
-            </View>
-            <View style={styles.heroStat}>
-              <Text style={styles.heroStatVal}>
-                {topCat
-                  ? CAT_ICONS[topCat[0]] + ' ' + topCat[0]
-                  : allTopCat
-                    ? CAT_ICONS[allTopCat[0]] + ' ' + allTopCat[0]
-                    : '—'}
-              </Text>
-              <Text style={styles.heroStatLbl}>Top category</Text>
-            </View>
+      {/* ── Quick Manual Entry Card ── */}
+      <View style={styles.quickCard}>
+        <View style={styles.quickHeader}>
+          <View style={styles.quickIconWrap}>
+            <Text style={styles.quickIcon}>⊕</Text>
           </View>
-        </View>
-      </Animated.View>
-
-      <Animated.View style={{ opacity: listOpacity, transform: [{ translateY: listAnim }] }}>
-
-        {error && (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        {/* ── CHART ── */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>SPENDING BY CATEGORY</Text>
-          <View style={styles.chartCard}>
-            {chartLabels.length > 0 ? (
-              <BarChart
-                data={{
-                  labels: chartLabels.map(l => l.charAt(0).toUpperCase() + l.slice(1)),
-                  datasets: [{ data: chartData }],
-                }}
-                width={width - 64}
-                height={180}
-                fromZero
-                chartConfig={{
-                  backgroundColor: '#181818',
-                  backgroundGradientFrom: '#181818',
-                  backgroundGradientTo: '#181818',
-                  decimalPlaces: 0,
-                  color: () => '#C8F135',
-                  labelColor: () => '#9A9A92',
-                  barPercentage: 0.6,
-                  propsForBackgroundLines: { stroke: '#2A2A2A' },
-                }}
-                style={{ borderRadius: 12 }}
-                showValuesOnTopOfBars
-                withInnerLines={true}
-              />
-            ) : (
-              <View style={styles.emptyChart}>
-                <Text style={styles.emptyChartIcon}>📊</Text>
-                <Text style={styles.emptyChartText}>No spending {PERIOD_LABELS[period]}</Text>
-              </View>
-            )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.quickTitle}>Quick Manual Entry</Text>
+            <Text style={styles.quickSub}>Log cash expenses instantly to keep your balance precise.</Text>
           </View>
         </View>
 
-        {/* ── CATEGORY PILLS ── */}
-        {Object.keys(catTotals).length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>BREAKDOWN</Text>
-            <View style={styles.pillsRow}>
-              {Object.entries(catTotals)
-                .sort((a, b) => b[1] - a[1])
-                .map(([cat, amt]) => (
-                  <View key={cat} style={[styles.pill, { borderColor: CAT_COLORS[cat] + '40' }]}>
-                    <View style={[styles.pillDot, { backgroundColor: CAT_COLORS[cat] }]} />
-                    <Text style={styles.pillIcon}>{CAT_ICONS[cat]}</Text>
-                    <View>
-                      <Text style={styles.pillName}>{cat}</Text>
-                      <Text style={[styles.pillAmt, { color: CAT_COLORS[cat] }]}>
-                        ₱{Math.round(amt).toLocaleString()}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-            </View>
+        <TouchableOpacity
+          style={styles.newTxBtn}
+          onPress={() => { setEntryText(''); setEntryError(''); setEntryVisible(true); }}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.newTxBtnText}>New Transaction →</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── AI Assistant strip ── */}
+      {insightMsg && (
+        <TouchableOpacity
+          style={styles.aiStrip}
+          onPress={() => navigation.navigate('Chat')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.aiIconWrap}>
+            <Text style={styles.aiIcon}>🤖</Text>
           </View>
-        )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.aiTitle}>AI Assistant</Text>
+            <Text style={styles.aiMsg} numberOfLines={2}>{insightMsg}</Text>
+          </View>
+          <Text style={styles.aiArrow}>›</Text>
+        </TouchableOpacity>
+      )}
 
-        {/* ── AI INSIGHTS ── */}
-        {insights && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>INSIGHTS</Text>
+      {/* ── Recent Activity ── */}
+      <View style={styles.recentHeader}>
+        <Text style={styles.recentTitle}>Recent Activity</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Transactions')}>
+          <Text style={styles.viewAll}>View All ›</Text>
+        </TouchableOpacity>
+      </View>
 
-            {insights.overspending_alerts?.map((alert, i) => (
-              <View key={i} style={styles.alertBox}>
-                <Text style={styles.alertText}>🚨 {alert.message}</Text>
+      {recentTx.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>💸</Text>
+          <Text style={styles.emptyText}>No transactions yet.{'\n'}Tap New Transaction to add one!</Text>
+        </View>
+      ) : (
+        recentTx.map((tx, i) => {
+          const color = CAT_COLORS[tx.category] || '#757575';
+          return (
+            <View key={tx.id || i} style={[styles.txRow, i === recentTx.length - 1 && { borderBottomWidth: 0 }]}>
+              {/* Icon */}
+              <View style={[styles.txIconWrap, { backgroundColor: color + '18' }]}>
+                <Text style={styles.txIconText}>{CAT_ICONS[tx.category] || '📦'}</Text>
               </View>
-            ))}
 
-            {/* Budget Status */}
-            {Object.keys(insights.budget_status || {}).length > 0 && (
-              <View style={styles.insightContainer}>
-                <Text style={styles.insightContainerTitle}>📊 Budget Status</Text>
-                {Object.entries(insights.budget_status || {}).map(([cat, info]) => (
-                  <View key={cat} style={[
-                    styles.budgetRow,
-                    info.status === 'over' && styles.budgetRowOver,
-                  ]}>
-                    <View style={styles.budgetHeader}>
-                      <Text style={styles.budgetCat}>
-                        {CAT_ICONS[cat] || '📦'} {cat}
-                      </Text>
-                      <Text style={[
-                        styles.budgetPct,
-                        info.status === 'over'    && { color: '#FF6B6B' },
-                        info.status === 'warning' && { color: '#FFE66D' },
-                        info.status === 'ok'      && { color: '#C8F135' },
-                      ]}>
-                        {info.percentage_used}%
-                      </Text>
-                    </View>
-                    <View style={styles.budgetBarBg}>
-                      <View style={[
-                        styles.budgetBarFill,
-                        {
-                          width: `${Math.min(info.percentage_used, 100)}%`,
-                          backgroundColor:
-                            info.status === 'over'    ? '#FF6B6B' :
-                            info.status === 'warning' ? '#FFE66D' : '#C8F135',
-                        },
-                      ]} />
-                    </View>
-                    <View style={styles.budgetFooter}>
-                      <Text style={styles.budgetSub}>
-                        ₱{info.spent.toLocaleString()} / ₱{info.budget.toLocaleString()}
-                      </Text>
-                      {info.status === 'over' && (
-                        <TouchableOpacity
-                          style={styles.resetBtn}
-                          onPress={() => handleReset(cat, info.spent)}
-                          disabled={resetting === cat}
-                        >
-                          {resetting === cat ? (
-                            <ActivityIndicator size="small" color="#FF6B6B" />
-                          ) : (
-                            <Text style={styles.resetBtnText}>🔄 Reset</Text>
-                          )}
-                        </TouchableOpacity>
-                      )}
-                    </View>
+              {/* Info */}
+              <View style={styles.txInfo}>
+                <Text style={styles.txMerchant} numberOfLines={1}>{tx.merchant}</Text>
+                <View style={styles.txSubRow}>
+                  <View style={styles.txSourceBadge}>
+                    <Text style={styles.txSourceIcon}>▣</Text>
+                    <Text style={styles.txSourceText}>{SOURCE_LABEL[tx.source] || 'Manual'}</Text>
                   </View>
-                ))}
-              </View>
-            )}
-
-            {/* Suggestions */}
-            {insights.suggestions?.length > 0 && (
-              <View style={styles.insightContainer}>
-                <Text style={styles.insightContainerTitle}>💡 Suggestions</Text>
-                <View style={styles.suggestionsBox}>
-                  {insights.suggestions.map((s, i) => (
-                    <Text key={i} style={styles.suggestionItem}>• {s}</Text>
-                  ))}
+                  <Text style={styles.txDot}>·</Text>
+                  <Text style={styles.txCat}>
+                    {tx.category.charAt(0).toUpperCase() + tx.category.slice(1)}
+                  </Text>
                 </View>
               </View>
-            )}
-          </View>
-        )}
 
-        {/* ── RECENT TRANSACTIONS ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>RECENT</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Transactions')}>
-              <Text style={styles.seeAll}>See all →</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.recentContainer}>
-            {transactions.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyIcon}>💸</Text>
-                <Text style={styles.emptyText}>No transactions yet.{'\n'}Tap + to add one!</Text>
+              {/* Amount + time */}
+              <View style={styles.txRight}>
+                <Text style={styles.txAmount}>
+                  -{'\u20B1'}{parseFloat(tx.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                </Text>
+                <Text style={styles.txTime}>{formatRelativeTime(tx.created_at)}</Text>
               </View>
-            ) : (
-              transactions.slice(0, 5).map((tx, i) => (
-                <View
-                  key={tx.id || i}
-                  style={[styles.txItem, i === Math.min(transactions.length, 5) - 1 && { marginBottom: 0 }]}
-                >
-                  <View style={[styles.txIcon, { backgroundColor: (CAT_COLORS[tx.category] || '#888') + '20' }]}>
-                    <Text style={styles.txIconText}>{CAT_ICONS[tx.category] || '📦'}</Text>
-                  </View>
-                  <View style={styles.txInfo}>
-                    <Text style={styles.txMerchant}>{tx.merchant}</Text>
-                    <View style={[styles.txBadge, { backgroundColor: (CAT_COLORS[tx.category] || '#888') + '20' }]}>
-                      <Text style={[styles.txBadgeText, { color: CAT_COLORS[tx.category] || '#888' }]}>
-                        {tx.category}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.txAmount}>₱{parseFloat(tx.amount).toLocaleString()}</Text>
-                </View>
-              ))
-            )}
-          </View>
-        </View>
-
-      </Animated.View>
+            </View>
+          );
+        })
+      )}
 
       <View style={{ height: 100 }} />
+
+      {/* ── Quick Entry Modal ── */}
+      <Modal visible={entryVisible} transparent animationType="slide" onRequestClose={() => setEntryVisible(false)}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Quick Entry</Text>
+            <Text style={styles.modalSub}>Describe your expense in plain language</Text>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder='e.g. "Spent ₱150 at Jollibee"'
+              placeholderTextColor="#AAAAAA"
+              value={entryText}
+              onChangeText={setEntryText}
+              multiline
+              autoFocus
+            />
+
+            {/* Examples */}
+            {['Spent ₱150 at Jollibee', 'Grab ride ₱85', 'Paid ₱500 at Netflix'].map((ex, i) => (
+              <TouchableOpacity key={i} style={styles.exampleChip} onPress={() => setEntryText(ex)}>
+                <Text style={styles.exampleChipText}>{ex}</Text>
+              </TouchableOpacity>
+            ))}
+
+            {entryError ? <Text style={styles.entryError}>{entryError}</Text> : null}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setEntryVisible(false)} disabled={entrySaving}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleQuickEntry} disabled={entrySaving}>
+                {entrySaving
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <Text style={styles.saveBtnText}>Save</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F0F0F' },
-  centered:  { flex: 1, backgroundColor: '#0F0F0F', justifyContent: 'center', alignItems: 'center' },
-  loadingText: { color: '#9A9A92', marginTop: 12, fontSize: 14 },
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  inner:     { padding: 16, paddingTop: 8 },
+  centered:  { flex: 1, backgroundColor: '#F8F9FA', justifyContent: 'center', alignItems: 'center' },
 
-  // ── Period selector ──
-  periodRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 4,
-    backgroundColor: '#181818',
-    borderRadius: 14,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: '#222',
+  // ── Total Spend Card ──
+  spendCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20,
+    marginBottom: 14, borderWidth: 1, borderColor: '#EEEEEE',
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
-  periodChip: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: 'center',
+  spendLabel:  { fontSize: 11, fontWeight: '700', color: '#9E9E9E', letterSpacing: 0.8, marginBottom: 6 },
+  spendAmount: { fontSize: 32, fontWeight: '800', color: '#1A1A1A', letterSpacing: -1, marginBottom: 6 },
+  trendRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 12 },
+  trendIcon:   { fontSize: 13, color: '#00897B' },
+  trendText:   { fontSize: 12, color: '#00897B', fontWeight: '500' },
+  chartWrap:   { position: 'relative' },
+  activeBudgetWrap: {
+    position: 'absolute', right: 0, bottom: 24,
+    alignItems: 'flex-end',
   },
-  periodChipActive: {
-    backgroundColor: '#C8F135',
+  activeBudgetLabel: { fontSize: 9, fontWeight: '700', color: '#9E9E9E', letterSpacing: 0.8 },
+  activeBudgetValue: { fontSize: 14, fontWeight: '800', color: '#00897B' },
+  budgetBarBg:   { height: 4, backgroundColor: '#F0F0F0', borderRadius: 2, overflow: 'hidden', marginTop: 4 },
+  budgetBarFill: { height: 4, borderRadius: 2 },
+
+  // ── Quick Entry Card ──
+  quickCard: {
+    backgroundColor: '#004D40', borderRadius: 16, padding: 20,
+    marginBottom: 14,
   },
-  periodChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#5A5A54',
+  quickHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 60 },
+  quickIconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center', alignItems: 'center',
   },
-  periodChipTextActive: {
-    color: '#0F0F0F',
+  quickIcon:  { fontSize: 20, color: '#FFFFFF' },
+  quickTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 4 },
+  quickSub:   { fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 17 },
+  newTxBtn: {
+    backgroundColor: '#B2EBF2', borderRadius: 30,
+    paddingVertical: 14, alignItems: 'center',
   },
+  newTxBtnText: { fontSize: 15, fontWeight: '700', color: '#004D40' },
 
-  // ── Hero ──
-  hero: {
-    margin: 16,
-    backgroundColor: '#C8F135',
-    borderRadius: 20,
-    padding: 24,
-  },
-  heroLabel:       { fontSize: 11, fontWeight: '600', color: 'rgba(0,0,0,0.5)', letterSpacing: 1.5 },
-  heroAmount:      { fontSize: 44, fontWeight: '700', color: '#0F0F0F', letterSpacing: -2, marginTop: 8 },
-  heroPeriodLabel: { fontSize: 12, color: 'rgba(0,0,0,0.45)', fontWeight: '500', marginTop: 2, marginBottom: 12 },
-  heroDivider:     { height: 1, backgroundColor: 'rgba(0,0,0,0.1)', marginBottom: 12 },
-  heroStats:       { flexDirection: 'row', gap: 20 },
-  heroStat:        {},
-  heroStatVal:     { fontSize: 14, fontWeight: '700', color: '#0F0F0F' },
-  heroStatLbl:     { fontSize: 10, color: 'rgba(0,0,0,0.5)', marginTop: 1, textTransform: 'uppercase', letterSpacing: 0.5 },
-
-  errorBox:  { margin: 16, backgroundColor: '#2A1515', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#FF6B6B40' },
-  errorText: { color: '#FF6B6B', fontSize: 13, lineHeight: 20, textAlign: 'center' },
-
-  section:       { paddingHorizontal: 16, marginBottom: 8 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle:  { fontSize: 11, fontWeight: '600', color: '#5A5A54', letterSpacing: 1.2, marginBottom: 12 },
-  seeAll:        { fontSize: 12, color: '#C8F135', fontWeight: '500' },
-
-  chartCard: { backgroundColor: '#181818', borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#222' },
-
-  emptyChart:     { alignItems: 'center', paddingVertical: 32 },
-  emptyChartIcon: { fontSize: 32, marginBottom: 8 },
-  emptyChartText: { color: '#5A5A54', fontSize: 13 },
-
-  pillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  pill: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#181818', borderRadius: 12, padding: 12,
-    borderWidth: 1, minWidth: '45%', flex: 1,
-  },
-  pillDot:  { width: 6, height: 6, borderRadius: 3 },
-  pillIcon: { fontSize: 18 },
-  pillName: { fontSize: 12, color: '#9A9A92', fontWeight: '500', textTransform: 'capitalize' },
-  pillAmt:  { fontSize: 14, fontWeight: '700', marginTop: 2 },
-
-  txItem: {
+  // ── AI Strip ──
+  aiStrip: {
+    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14,
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#181818', borderRadius: 12, padding: 14,
-    marginBottom: 8, borderWidth: 1, borderColor: '#222',
+    marginBottom: 20, borderWidth: 1, borderColor: '#EEEEEE',
+    shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 3, elevation: 1,
   },
-  txIcon:     { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  aiIconWrap: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#E0F2F1',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  aiIcon:  { fontSize: 20 },
+  aiTitle: { fontSize: 13, fontWeight: '700', color: '#1A1A1A', marginBottom: 3 },
+  aiMsg:   { fontSize: 12, color: '#555555', lineHeight: 17, fontStyle: 'italic' },
+  aiArrow: { fontSize: 22, color: '#BDBDBD' },
+
+  // ── Recent Activity ──
+  recentHeader: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 12,
+  },
+  recentTitle: { fontSize: 18, fontWeight: '700', color: '#1A1A1A' },
+  viewAll:     { fontSize: 13, color: '#00897B', fontWeight: '600' },
+
+  txRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#FFFFFF', paddingVertical: 12, paddingHorizontal: 14,
+    borderBottomWidth: 1, borderBottomColor: '#F5F5F5',
+    borderRadius: 0,
+  },
+  txIconWrap: { width: 42, height: 42, borderRadius: 21, justifyContent: 'center', alignItems: 'center' },
   txIconText: { fontSize: 20 },
-  txInfo:     { flex: 1 },
-  txMerchant: { fontSize: 14, fontWeight: '600', color: '#F5F5F0', marginBottom: 4 },
-  txBadge:    { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
-  txBadgeText:{ fontSize: 10, fontWeight: '600', textTransform: 'capitalize' },
-  txAmount:   { fontSize: 15, fontWeight: '700', color: '#F5F5F0' },
+  txInfo:     { flex: 1, minWidth: 0 },
+  txMerchant: { fontSize: 14, fontWeight: '600', color: '#1A1A1A', marginBottom: 3 },
+  txSubRow:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  txSourceBadge: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  txSourceIcon:  { fontSize: 9, color: '#9E9E9E' },
+  txSourceText:  { fontSize: 11, color: '#9E9E9E' },
+  txDot:         { fontSize: 11, color: '#CCCCCC' },
+  txCat:         { fontSize: 11, color: '#9E9E9E' },
+  txRight:       { alignItems: 'flex-end', gap: 3 },
+  txAmount:      { fontSize: 14, fontWeight: '700', color: '#E53935' },
+  txTime:        { fontSize: 10, color: '#BDBDBD' },
 
   emptyState: { alignItems: 'center', paddingVertical: 40 },
   emptyIcon:  { fontSize: 40, marginBottom: 12 },
-  emptyText:  { color: '#5A5A54', fontSize: 14, textAlign: 'center', lineHeight: 22 },
+  emptyText:  { fontSize: 13, color: '#9E9E9E', textAlign: 'center', lineHeight: 20 },
 
-  // ── AI Insights ──
-  alertBox:  { backgroundColor: '#2A1515', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#FF6B6B40' },
-  alertText: { color: '#FF6B6B', fontSize: 13, lineHeight: 20 },
-
-  budgetRow:     { backgroundColor: '#181818', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#222' },
-  budgetRowOver: { borderColor: '#FF6B6B40', backgroundColor: '#1A0A0A' },
-  budgetHeader:  { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  budgetCat:     { fontSize: 13, fontWeight: '600', color: '#F5F5F0', textTransform: 'capitalize' },
-  budgetPct:     { fontSize: 13, fontWeight: '700' },
-  budgetBarBg:   { height: 6, backgroundColor: '#2A2A2A', borderRadius: 3, overflow: 'hidden', marginBottom: 8 },
-  budgetBarFill: { height: 6, borderRadius: 3 },
-  budgetFooter:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  budgetSub:     { fontSize: 11, color: '#5A5A54' },
-  resetBtn: {
-    backgroundColor: '#2A1515', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderWidth: 1, borderColor: '#FF6B6B40',
-    flexDirection: 'row', alignItems: 'center', gap: 4,
+  // ── Quick Entry Modal ──
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 40,
   },
-  resetBtnText: { fontSize: 11, color: '#FF6B6B', fontWeight: '600' },
-
-  suggestionsBox:  { borderRadius: 10, paddingTop: 4 },
-  suggestionItem:  { fontSize: 13, color: '#9A9A92', lineHeight: 22, marginBottom: 4 },
-
-  insightContainer: {
-    backgroundColor: '#141414', borderRadius: 16, padding: 16,
-    marginBottom: 12, borderWidth: 1, borderColor: '#2A2A2A',
+  modalHandle: {
+    width: 40, height: 4, backgroundColor: '#E0E0E0',
+    borderRadius: 2, alignSelf: 'center', marginBottom: 20,
   },
-  insightContainerTitle: { fontSize: 13, fontWeight: '700', color: '#F5F5F0', marginBottom: 12, letterSpacing: 0.3 },
-
-  recentContainer: {
-    backgroundColor: '#141414', borderRadius: 16, padding: 12,
-    borderWidth: 1, borderColor: '#2A2A2A',
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#1A1A1A', marginBottom: 4 },
+  modalSub:   { fontSize: 13, color: '#9E9E9E', marginBottom: 16 },
+  modalInput: {
+    backgroundColor: '#F5F5F5', borderRadius: 12, padding: 14,
+    color: '#1A1A1A', fontSize: 15, minHeight: 80,
+    textAlignVertical: 'top', marginBottom: 12,
+    borderWidth: 1, borderColor: '#EEEEEE',
   },
+  exampleChip: {
+    backgroundColor: '#E0F2F1', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 7,
+    alignSelf: 'flex-start', marginBottom: 8,
+  },
+  exampleChipText: { fontSize: 12, color: '#00897B', fontWeight: '500' },
+  entryError:      { color: '#E53935', fontSize: 12, marginBottom: 12 },
+  modalActions:    { flexDirection: 'row', gap: 12, marginTop: 8 },
+  cancelBtn: {
+    flex: 1, backgroundColor: '#F5F5F5', borderRadius: 14,
+    padding: 16, alignItems: 'center',
+  },
+  cancelBtnText: { color: '#666666', fontWeight: '600', fontSize: 15 },
+  saveBtn: {
+    flex: 1, backgroundColor: '#00897B', borderRadius: 14,
+    padding: 16, alignItems: 'center',
+  },
+  saveBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
 });
