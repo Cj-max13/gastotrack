@@ -41,7 +41,7 @@ const INACTIVE = '#6B6B6B'; // inactive label
 const TAB_CONFIG = [
   { name: 'Dashboard',  label: 'Dashboard',    icon: '⊞' },
   { name: 'Analytics',  label: 'Analytics',    icon: '↗' },
-  { name: 'Chat',       label: 'AI\nAssistant', icon: '🤖' },
+  { name: 'Chat',       label: 'Gasto', icon: '🤖' },
   { name: 'Budget',     label: 'Budget',       icon: '▣' },
   { name: 'Transactions', label: 'History',    icon: '🕐' },
 ];
@@ -182,7 +182,7 @@ function MainTabs({ user, onLogout }) {
           name="Chat"
           component={ChatScreen}
           options={({ navigation }) => ({
-            title: 'Gasto AI',
+            title: 'Gasto',
             headerLeft: () => (
               <TouchableOpacity
                 onPress={() => navigation.goBack()}
