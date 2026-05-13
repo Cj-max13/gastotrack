@@ -209,12 +209,12 @@ export default function DashboardScreen({ navigation }) {
           <Text style={styles.trendText}>12% less than last month</Text>
         </View>
 
-        {/* Bar chart */}
+        {/* Bar chart + active budget */}
         <View style={styles.chartWrap}>
           <BarChart
             data={chartData}
-            width={CHART_W}
-            height={100}
+            width={CHART_W + 32}
+            height={110}
             fromZero
             withInnerLines={false}
             withOuterLines={false}
@@ -225,20 +225,19 @@ export default function DashboardScreen({ navigation }) {
               backgroundGradientTo:   'transparent',
               decimalPlaces: 0,
               color: (opacity, index) => {
-                // Highlight today's bar (index = today's day of week)
                 const todayIdx = (new Date().getDay() + 6) % 7;
                 return index === todayIdx
                   ? `rgba(0,77,64,${opacity})`
                   : `rgba(176,220,215,${opacity})`;
               },
-              labelColor: () => '#9E9E9E',
-              barPercentage: 0.55,
+              labelColor: () => '#BDBDBD',
+              barPercentage: 0.5,
               propsForLabels: { fontSize: 10 },
             }}
-            style={{ marginLeft: -16, borderRadius: 0 }}
+            style={{ marginLeft: -32, borderRadius: 0 }}
           />
 
-          {/* Active budget label */}
+          {/* Active budget — bottom right */}
           {budgetData && (
             <View style={styles.activeBudgetWrap}>
               <Text style={styles.activeBudgetLabel}>ACTIVE BUDGET</Text>
@@ -249,7 +248,7 @@ export default function DashboardScreen({ navigation }) {
           )}
         </View>
 
-        {/* Budget progress bar */}
+        {/* Budget progress bar — flush at bottom of card */}
         {budgetData && budgetData.monthly_budget > 0 && (
           <View style={styles.budgetBarBg}>
             <View style={[
@@ -409,24 +408,35 @@ const styles = StyleSheet.create({
 
   // ── Total Spend Card ──
   spendCard: {
-    backgroundColor: '#FFFFFF', borderRadius: 16, padding: 20,
-    marginBottom: 14, borderWidth: 1, borderColor: '#EEEEEE',
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 0,          // progress bar sits flush at bottom
+    marginBottom: 14,
+    overflow: 'hidden',        // clips the progress bar to rounded corners
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   spendLabel:  { fontSize: 11, fontWeight: '700', color: '#9E9E9E', letterSpacing: 0.8, marginBottom: 6 },
-  spendAmount: { fontSize: 32, fontWeight: '800', color: '#1A1A1A', letterSpacing: -1, marginBottom: 6 },
-  trendRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 12 },
+  spendAmount: { fontSize: 34, fontWeight: '800', color: '#1A1A1A', letterSpacing: -1, marginBottom: 6 },
+  trendRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   trendIcon:   { fontSize: 13, color: '#00897B' },
   trendText:   { fontSize: 12, color: '#00897B', fontWeight: '500' },
-  chartWrap:   { position: 'relative' },
+  chartWrap:   { position: 'relative', marginHorizontal: -20 },
   activeBudgetWrap: {
-    position: 'absolute', right: 0, bottom: 24,
+    position: 'absolute',
+    right: 20,
+    bottom: 28,
     alignItems: 'flex-end',
   },
   activeBudgetLabel: { fontSize: 9, fontWeight: '700', color: '#9E9E9E', letterSpacing: 0.8 },
-  activeBudgetValue: { fontSize: 14, fontWeight: '800', color: '#00897B' },
-  budgetBarBg:   { height: 4, backgroundColor: '#F0F0F0', borderRadius: 2, overflow: 'hidden', marginTop: 4 },
-  budgetBarFill: { height: 4, borderRadius: 2 },
+  activeBudgetValue: { fontSize: 15, fontWeight: '800', color: '#00897B' },
+  budgetBarBg:   { height: 4, backgroundColor: '#E0F2F1', marginTop: 0 },
+  budgetBarFill: { height: 4 },
 
   // ── Quick Entry Card ──
   quickCard: {
